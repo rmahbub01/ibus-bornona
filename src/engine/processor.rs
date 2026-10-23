@@ -107,6 +107,17 @@ impl TypingProcessor {
     fn process_character(&mut self, character: char) {
         let last = self.buffer.chars().last().unwrap_or_default();
 
+        if character.is_kar()
+            && self.config.old_kar_order
+            && last == B_HASANTA
+            && character.is_left_standing_kar()
+        {
+            self.buffer.pop();
+            self.buffer
+                .push(character.kar_to_independent_vowel().unwrap_or(character));
+            return;
+        }
+
         if character.is_kar() {
             if self.config.old_kar_order
                 && character.is_left_standing_kar()
