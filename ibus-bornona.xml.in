@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- filename: ibus-bornona.xml -->
+<component>
+	<name>org.freedesktop.IBus.Bornona</name>
+	<description>Bornona Bengali Input Method</description>
+	<exec>@BINDIR@/ibus-bornona --ibus</exec>
+	<version>1.0.0</version>
+	<author>Bornona Contributors</author>
+	<license>GPL-3.0-or-later</license>
+	<homepage>https://github.com/rmahbub01/ibus-bornona</homepage>
+	<textdomain>ibus-bornona</textdomain>
+
+	<engines>
+		<engine>
+			<name>bornona</name>
+			<language>bn</language>
+			<license>GPL-3.0-or-later</license>
+			<author>Md. Mahbub Rahman</author>
+			<icon>ibus-bornona</icon>
+			<layout>us</layout>
+			<longname>Bornona</longname>
+			<description>Bornona Bengali Fixed Layout</description>
+			<rank>99</rank>
+			<symbol>বর্ণ</symbol>
+		</engine>
+	</engines>
+</component>

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bornona keyboard Layout</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; --u: min(64px, calc((100vw - 90px) / 16.5));
+          font-family: "Noto Sans Bengali", "Kalpurush", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0d1317; color: #eef4f5; }
+  .board { padding: calc(var(--u) * .3); border-radius: 18px;
+           background: linear-gradient(145deg, #3d484f, #1d262c);
+           box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 24px 50px rgba(0,0,0,.55); }
+  .plate { padding: calc(var(--u) * .1); border-radius: 10px; background: #0a0f12; box-shadow: inset 0 2px 8px rgba(0,0,0,.9); }
+  .row { display: flex; }
+  .cell { width: calc(var(--w) * var(--u)); height: var(--u); padding: 3px; flex: none; }
+
+  .cap { --a: #39444b; --b: #29323a; --s: #12181c; position: relative; height: 100%; border-radius: 8px;
+         display: grid; place-items: center; user-select: none;
+         background: linear-gradient(180deg, var(--a), var(--b));
+         box-shadow: 0 2px 0 var(--s), 0 4px 6px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.2); }
+  .cap::before { content: ""; position: absolute; inset: 4px; border-radius: 6px; pointer-events: none;
+                 background: linear-gradient(180deg, rgba(0,0,0,.14), rgba(255,255,255,.05)); }
+  .cap.mod { --a: #0b8a67; --b: #006a4e; --s: #003c2c; }
+  .cap.acc { --a: #ff5568; --b: #d8243a; --s: #7c1021; }
+  .cap.alt { cursor: pointer; }
+  .cap.alt:hover { filter: brightness(1.12); }
+  .cap.alt:focus-visible { outline: 2px solid #ffd36b; outline-offset: 2px; }
+
+  .p { position: relative; font-size: calc(var(--u) * .4); font-weight: 500; line-height: 1; margin-top: calc(var(--u) * .1); }
+  .l { position: absolute; left: 8px; top: 6px; font-size: calc(var(--u) * .19); color: rgba(238,244,245,.6); line-height: 1; z-index: 1; }
+  .t { position: relative; font-size: calc(var(--u) * .21); font-weight: 600; }
+  .cap.sw .p { color: #ffd36b; }
+
+  body.alt .cap.alt { transform: translateY(2px); filter: brightness(1.15);
+         box-shadow: 0 0 20px rgba(244,42,65,.7), inset 0 1px 0 rgba(255,255,255,.2); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+  <div class="board"><div class="plate" id="kb" role="group" aria-label="Bornona keyboard"></div></div>
+
+<script>
+  const L = (l, p, s, w = 1) => ({ l, p, s, w });
+  const M = (t, w = 1, c = 'mod', alt = false) => ({ t, w, c, alt });
+  const G = w => ({ gap: true, w });
+
+  const rows = [
+    [M('Esc'), L('1','১','!'), L('2','২','ঁ'), L('3','৩','#'), L('4','৪','৳'), L('5','৫','%'), L('6','৬','ঃ'), L('7','৭','ৎ'),
+     L('8','৮','*'), L('9','৯','('), L('0','০',')'), L('_','-','_'), L('+','=','+'), M('⌫ Backspace', 2), M('Del')],
+    [M('Tab', 1.5), L('Q','ং','ঙ'), L('W','ঢ','ঠ'), L('E','ে','ৈ'), L('R','র','ৃ'), L('T','ত','ট'), L('Y','ধ','থ'),
+     L('U','ু','ূ'), L('I','ি','ী'), L('O','ো','ৌ'), L('P','প','্র'), L('{','[','{'), L('}',']','}'), L('\\','ৱ','ৰ', 1.5), M('PgUp')],
+    [M('Caps', 1.75), L('A','া','অ'), L('S','স','শ'), L('D','দ','ড'), L('F','ফ','র্'), L('G','গ','ঘ'), L('H','্','হ'),
+     L('J','জ','ঝ'), L('K','ক','খ'), L('L','ল','।'), L(':',';',':'), L('"',"'",'"'), M('⏎ Enter', 2.25, 'acc'), M('PgDn')],
+    [M('⇧ Shift', 2.25), L('Z','য','ড়'), L('X','ষ','ঢ়'), L('C','চ','ছ'), L('V','ভ','্য'), L('B','ব','য়'), L('N','ন','ণ'),
+     L('M','ম','ঞ'), L('<',',','<'), L('>','.','>'), L('?','/','?'), M('⇧ Shift', 1.75), M('↑'), M('End')],
+    [M('Ctrl', 1.25), M('Win', 1.25), M('Alt', 1.25, 'acc', true), M('Space', 6.25, 'alpha'), M('Alt', 1, 'acc', true),
+     M('Fn'), G(1), M('←'), M('↓'), M('→')]
+  ];
+
+  const show = s => /^\p{M}/u.test(s) ? '\u25CC' + s : s;
+  const kb = document.getElementById('kb');
+  let alt = false;
+
+  rows.forEach(r => {
+    const row = document.createElement('div'); row.className = 'row';
+    r.forEach(k => {
+      const cell = document.createElement('div'); cell.className = 'cell'; cell.style.setProperty('--w', k.w);
+      if (!k.gap) {
+        const cap = document.createElement('div');
+        if (k.l !== undefined) {
+          cap.className = 'cap'; cap.dataset.p = k.p; cap.dataset.s = k.s || '';
+          cap.innerHTML = '<span class="l">' + k.l + '</span><span class="p"></span>';
+        } else {
+          cap.className = 'cap ' + k.c + (k.alt ? ' alt' : '');
+          cap.innerHTML = '<span class="t">' + k.t + '</span>';
+          if (k.alt) {
+            cap.tabIndex = 0; cap.setAttribute('role', 'button'); cap.setAttribute('aria-pressed', 'false');
+            cap.addEventListener('click', toggle);
+            cap.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+          }
+        }
+        cell.appendChild(cap);
+      }
+      row.appendChild(cell);
+    });
+    kb.appendChild(row);
+  });
+
+  function render() {
+    document.body.classList.toggle('alt', alt);
+    kb.querySelectorAll('.cap[data-p]').forEach(c => {
+      const swap = alt && c.dataset.s;
+      c.querySelector('.p').textContent = show(swap ? c.dataset.s : c.dataset.p);
+      c.classList.toggle('sw', !!swap);
+    });
+    kb.querySelectorAll('.cap.alt').forEach(c => c.setAttribute('aria-pressed', alt));
+  }
+  function toggle() { alt = !alt; render(); }
+  render();
+</script>
+</body>
+</html>
