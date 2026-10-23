@@ -44,6 +44,10 @@ To remove `ibus-bornona`:
 curl -LsSf https://raw.githubusercontent.com/rmahbub01/ibus-bornona/master/install.sh | sh -s -- --uninstall
 ```
 
+The install-script and Makefile uninstall flows also remove Bornona from the
+current user's GNOME input sources while preserving any other configured
+sources.
+
 ---
 
 ## Manual Build & Installation
@@ -119,9 +123,33 @@ USAGE:
 COMMANDS:
     setup            Add Bornona to your DE input sources (Alt+Space to switch)
     doctor           Check that everything is installed and running
+    config           Show or change typing feature settings
+    reset            Restore all typing features to their defaults
     layout           Show native graphical layout popup
     compose <keys>   Show what a key sequence types, e.g. `ibus-bornona compose bFNna`
     version          Print the version
+```
+
+### Typing Feature Settings (`config`, `reset`)
+
+Show the current settings or turn a feature on or off:
+
+```bash
+ibus-bornona config
+ibus-bornona config auto-vowel off
+ibus-bornona config auto-chandra off
+ibus-bornona config old-reph off
+ibus-bornona config traditional-kar on
+```
+
+Feature names are `auto-vowel`, `auto-chandra`, `old-reph`, and
+`traditional-kar`. Settings are stored in
+`$XDG_CONFIG_HOME/ibus-bornona/config.json` (or `~/.config/ibus-bornona/config.json`
+when `XDG_CONFIG_HOME` is not set) and apply to subsequent keystrokes.
+Restore the defaults with:
+
+```bash
+ibus-bornona reset
 ```
 
 ### Visual Layout Popup (`layout`)
@@ -169,9 +197,9 @@ ibus-bornona compose "ami baqlaB gan gai"
 - **Preedit Composition**: Typed keys compose in IBus's underlined preedit buffer and are committed on Space, Enter, focus change, or an unhandled key.
 - **Composition-Aware Backspace**: <kbd>Backspace</kbd> restores the preedit state before the previous physical key, including automatic vowel ordering and conjunct transformations.
 - **Automatic Vowel Forming**: Initial vowel keys automatically form independent vowels (`a` -> `আ`, `i` -> `ই`, `u` -> `উ`, `o` -> `ও`, `A` -> `অ`).
-- **Direct Hasanta and Kar Input**: A single `h` immediately inserts Hasanta (`্`). A following vowel key inserts its Kar, so `ha`, `hi`, and `hI` produce `্া`, `্ি`, and `্ী`; after a consonant, `kha` produces `ক্া`.
+- **Direct Hasanta and Kar Input**: A single `h` immediately inserts Hasanta (`্`). A following vowel key inserts its Kar, so `ha` produces `্া`; left-standing `i` after Hasanta forms the independent vowel (`hi` -> `ই`).
 - **Zero-Width Non-Joiner**: Type the dedicated backtick key (`\u{0060}`) to insert a Zero-Width Non-Joiner (`\u{200C}`).
-- **Fixed-Layout Automation**: Supports left-standing vowel ordering (`ik` -> `কি`), chandrabindu placement (`k@a` -> `কাঁ`), old-style reph movement (`bNFna` -> `বর্ণনা`), phalas (`pPaNe` -> `প্রাণে`), and zo-fola with ZWJ after Ra (`rV` -> `র‍্য`).
+- **Fixed-Layout Automation**: Supports left-standing vowel ordering (`ik` -> `কি`), optional chandrabindu placement (`k@a` -> `কাঁ`), optional old-style reph movement (`bNFna` -> `বর্ণনা`), phalas (`pPaNe` -> `প্রাণে`), and zo-fola with ZWJ after Ra (`rV` -> `র‍্য`).
 - **Numpad Mapping**: Numeric keypad digits directly type Bengali numbers `০`–`৯`.
 
 ---

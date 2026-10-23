@@ -36,8 +36,11 @@ mod tests {
         assert_eq!(compose("u"), "উ");
         assert_eq!(compose("o"), "ও");
         assert_eq!(compose("A"), "অ");
+        assert_eq!(compose("ek"), "এক");
+        assert_eq!(compose("eK"), "এখ");
         assert_eq!(compose("ka"), "কা");
         assert_eq!(compose("ki"), "কি");
+        assert_eq!(compose("ke"), "কে");
         assert_eq!(compose("Ke"), "খে");
         assert_eq!(compose("kE"), "কৈ");
     }
@@ -118,8 +121,20 @@ mod tests {
         let layout = BornonaLayout::new();
         let mut processor = TypingProcessor::new(TypingConfig::default());
         type_keys(&mut processor, &layout, "i");
+        assert_eq!(processor.preedit_text(), "ই");
         assert_eq!(processor.commit(), "ই");
         assert!(processor.is_empty());
+    }
+
+    #[test]
+    fn pending_vowel_is_visible_in_preedit_before_commit() {
+        let layout = BornonaLayout::new();
+        let mut processor = TypingProcessor::default();
+        type_keys(&mut processor, &layout, "pai");
+
+        assert_eq!(processor.buffer(), "পা");
+        assert_eq!(processor.preedit_text(), "পাই");
+        assert_eq!(processor.commit(), "পাই");
     }
 
     #[test]

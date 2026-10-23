@@ -108,12 +108,105 @@ pub fn append_source(current: &str) -> Option<String> {
     })
 }
 
+fn source_entries(current: &str) -> Result<Vec<&str>, String> {
+    let current = current.trim();
+    let current = current.strip_prefix("@a(ss)").map(str::trim).unwrap_or(current);
+    let inner = current
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .ok_or_else(|| format!("unexpected input-sources value: {current}"))?
+        .trim();
+    if inner.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut entries = Vec::new();
+    let mut start = 0;
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut tuple_depth = 0;
+    for (index, character) in inner.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' if quoted => escaped = true,
+            '\'' => quoted = !quoted,
+            '(' if !quoted => tuple_depth += 1,
+            ')' if !quoted => tuple_depth -= 1,
+            ',' if !quoted && tuple_depth == 0 => {
+                entries.push(inner[start..index].trim());
+                start = index + character.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if quoted || escaped || tuple_depth != 0 {
+        return Err(format!("unexpected input-sources value: {current}"));
+    }
+    entries.push(inner[start..].trim());
+    Ok(entries)
+}
+
+fn is_bornona_source(entry: &str) -> bool {
+    let mut normalized = String::with_capacity(entry.len());
+    let mut quoted = false;
+    let mut escaped = false;
+    for character in entry.chars() {
+        if escaped {
+            normalized.push(character);
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' if quoted => {
+                normalized.push(character);
+                escaped = true;
+            }
+            '\'' => {
+                normalized.push(character);
+                quoted = !quoted;
+            }
+            character if !quoted && character.is_whitespace() => {}
+            _ => normalized.push(character),
+        }
+    }
+    normalized == "('ibus','bornona')"
+}
+
+/// Remove only Bornona from a GNOME input-source value.
+pub fn remove_source(current: &str) -> Result<Option<String>, String> {
+    let entries = source_entries(current)?;
+    let entry_count = entries.len();
+    let filtered: Vec<_> = entries
+        .into_iter()
+        .filter(|entry| !is_bornona_source(entry))
+        .collect();
+    if filtered.len() == entry_count {
+        return Ok(None);
+    }
+    Ok(Some(format!("[{}]", filtered.join(", "))))
+}
+
 /// Add Bornona to GNOME's input sources. Returns `Ok(true)` if changed.
 pub fn add_gnome_input_source() -> Result<bool, String> {
     let current = run("gsettings", &["get", SCHEMA, "sources"])?;
     match append_source(&current) {
         None if current.contains(&format!("'{SOURCE_ID}'")) => Ok(false),
         None => Err(format!("unexpected input-sources value: {}", current.trim())),
+        Some(new) => {
+            run("gsettings", &["set", SCHEMA, "sources", &new])?;
+            Ok(true)
+        }
+    }
+}
+
+/// Remove Bornona from GNOME's input sources, preserving all other sources.
+pub fn remove_gnome_input_source() -> Result<bool, String> {
+    let current = run("gsettings", &["get", SCHEMA, "sources"])?;
+    match remove_source(&current)? {
+        None => Ok(false),
         Some(new) => {
             run("gsettings", &["set", SCHEMA, "sources", &new])?;
             Ok(true)
@@ -281,6 +374,23 @@ mod tests {
         assert_eq!(
             append_source("[('xkb', 'us'), ('ibus', 'bornona')]"),
             None
+        );
+    }
+
+    #[test]
+    fn test_remove_source_preserves_other_input_sources() {
+        assert_eq!(
+            remove_source("[('xkb', 'us'), ('ibus', 'bornona'), ('xkb', 'bd')]").unwrap(),
+            Some("[('xkb', 'us'), ('xkb', 'bd')]".into())
+        );
+        assert_eq!(
+            remove_source(" @a(ss) [('ibus', 'bornona')] ").unwrap(),
+            Some("[]".into())
+        );
+        assert_eq!(remove_source("[('xkb', 'us')]").unwrap(), None);
+        assert_eq!(
+            remove_source("[('xkb', 'us, intl'), ('ibus', 'bornona')]").unwrap(),
+            Some("[('xkb', 'us, intl')]".into())
         );
     }
 

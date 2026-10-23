@@ -2,36 +2,21 @@
 
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, OnceLock};
 
 use super::ffi::*;
 use super::keycodes::{classify_key, KeyAction};
-use crate::engine::{BornonaLayout, TypingConfig, TypingProcessor};
+use crate::config::ConfigWatcher;
+use crate::engine::{BornonaLayout, TypingProcessor};
 
 pub static ENGINE_NAME: &str = "bornona";
 pub static COMPONENT_NAME: &str = "org.freedesktop.IBus.Bornona";
 
-static ENGINE_CONFIG: OnceLock<Mutex<TypingConfig>> = OnceLock::new();
 static ENGINE_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 struct EngineInstance {
     layout: BornonaLayout,
     processor: TypingProcessor,
-}
-
-pub fn init_engine_state(config: TypingConfig) {
-    *ENGINE_CONFIG
-        .get_or_init(|| Mutex::new(TypingConfig::default()))
-        .lock()
-        .unwrap() = config;
-}
-
-fn engine_config() -> TypingConfig {
-    ENGINE_CONFIG
-        .get_or_init(|| Mutex::new(TypingConfig::default()))
-        .lock()
-        .unwrap()
-        .clone()
+    config_watcher: ConfigWatcher,
 }
 
 unsafe fn new_ibus_text(text: &str) -> *mut IBusText {
@@ -45,11 +30,12 @@ unsafe fn update_preedit_text(engine: *mut IBusEngine, processor: &TypingProcess
     if engine.is_null() {
         return;
     }
-    let text = new_ibus_text(processor.buffer());
+    let preedit = processor.preedit_text();
+    let text = new_ibus_text(&preedit);
     if text.is_null() {
         return;
     }
-    let cursor = processor.buffer().chars().count() as u32;
+    let cursor = preedit.chars().count() as u32;
     if cursor != 0 {
         ibus_text_append_attribute(
             text,
@@ -103,9 +89,17 @@ unsafe extern "C" fn create_engine_cb(
         return std::ptr::null_mut();
     }
 
+    let config_watcher = match ConfigWatcher::new() {
+        Ok(watcher) => watcher,
+        Err(error) => {
+            eprintln!("ibus-bornona: {error}");
+            return std::ptr::null_mut();
+        }
+    };
     let instance = Box::into_raw(Box::new(EngineInstance {
         layout: BornonaLayout::new(),
-        processor: TypingProcessor::new(engine_config()),
+        processor: TypingProcessor::new(config_watcher.config().clone()),
+        config_watcher,
     }));
     let data = instance as *mut c_void;
 
@@ -171,6 +165,11 @@ unsafe extern "C" fn process_key_event_cb(
         return 0;
     }
     let instance = &mut *(user_data as *mut EngineInstance);
+    match instance.config_watcher.refresh() {
+        Ok(Some(config)) => instance.processor.set_config(config),
+        Ok(None) => {}
+        Err(error) => eprintln!("ibus-bornona: {error}"),
+    }
     match classify_key(keyval, state) {
         KeyAction::Modifier => 0,
         KeyAction::CommitAndPassThrough | KeyAction::PassThrough => {

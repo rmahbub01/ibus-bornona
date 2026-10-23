@@ -6,4 +6,4 @@ pub mod processor;
 mod tests;
 
 pub use layout::BornonaLayout;
-pub use processor::{compose, TypingConfig, TypingProcessor};
+pub use processor::{compose, compose_with_config, TypingConfig, TypingProcessor};

@@ -1,12 +1,15 @@
 //! Fixed-layout Bengali typing automation.
 
 use super::chars::*;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TypingConfig {
     pub auto_vowel: bool,
     pub auto_chandra: bool,
     pub old_reph: bool,
+    #[serde(skip)]
     pub old_kar_order: bool,
     pub traditional_kar: bool,
 }
@@ -49,6 +52,22 @@ impl TypingProcessor {
 
     pub fn buffer(&self) -> &str {
         &self.buffer
+    }
+
+    pub fn preedit_text(&self) -> String {
+        let mut text = self.buffer.clone();
+        if let Some(kar) = self.pending_kar {
+            if self.config.auto_vowel {
+                text.push(kar.kar_to_independent_vowel().unwrap_or(kar));
+            } else {
+                text.push(kar);
+            }
+        }
+        text
+    }
+
+    pub fn set_config(&mut self, config: TypingConfig) {
+        self.config = config;
     }
 
     pub fn is_empty(&self) -> bool {
@@ -199,6 +218,11 @@ impl TypingProcessor {
             self.buffer.push(next);
             return true;
         }
+        if self.config.auto_vowel && self.buffer.is_empty() && kar == B_E_KAR {
+            self.buffer.push(B_E);
+            self.pending_kar = None;
+            return false;
+        }
         if next.is_pure_consonant() {
             self.buffer.push(next);
             self.buffer.push(kar);
@@ -312,8 +336,12 @@ impl TypingProcessor {
 
 /// Compose Bornona key characters using the same fixed-layout engine as IBus.
 pub fn compose(keys: &str) -> String {
+    compose_with_config(keys, TypingConfig::default())
+}
+
+pub fn compose_with_config(keys: &str, config: TypingConfig) -> String {
     let layout = super::layout::BornonaLayout::new();
-    let mut processor = TypingProcessor::default();
+    let mut processor = TypingProcessor::new(config);
     for key in keys.chars() {
         if key == ' ' {
             processor.process_value(" ");

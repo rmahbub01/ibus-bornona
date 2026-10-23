@@ -53,6 +53,29 @@ uninstall:
 			pkgdatadir="$(HOME)/.local/share/ibus-bornona"; \
 			remove_system_component=false; \
 		fi; \
+		if [ -x "$$bindir/ibus-bornona" ]; then \
+			remove_source_status=0; \
+			source_cleanup_code='import ast, subprocess; schema="org.gnome.desktop.input-sources"; key="sources"; value=subprocess.check_output(["gsettings","get",schema,key],universal_newlines=True).strip(); value=value[len("@a(ss)"):].strip() if value.startswith("@a(ss)") else value; sources=ast.literal_eval(value); cleaned=[source for source in sources if tuple(source)!=("ibus","bornona")]; subprocess.run(["gsettings","set",schema,key,repr(cleaned)],check=True) if cleaned!=sources else None'; \
+			if [ "$$(id -u)" -eq 0 ] && [ -n "$${SUDO_USER:-}" ] && [ "$$SUDO_USER" != root ]; then \
+				user_uid=$$(id -u "$$SUDO_USER") || remove_source_status=1; \
+				user_home=$$(getent passwd "$$SUDO_USER" | cut -d: -f6) || remove_source_status=1; \
+				user_runtime="/run/user/$$user_uid"; \
+				if [ "$$remove_source_status" -eq 0 ] && [ -S "$$user_runtime/bus" ] && command -v runuser >/dev/null 2>&1; then \
+					if ! runuser -u "$$SUDO_USER" -- env HOME="$$user_home" XDG_RUNTIME_DIR="$$user_runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$$user_runtime/bus" "$$bindir/ibus-bornona" remove-source >/dev/null 2>&1; then \
+						runuser -u "$$SUDO_USER" -- env HOME="$$user_home" XDG_RUNTIME_DIR="$$user_runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$$user_runtime/bus" python3 -c "$$source_cleanup_code" || remove_source_status=1; \
+					fi; \
+				else \
+					remove_source_status=1; \
+				fi; \
+			else \
+				if ! "$$bindir/ibus-bornona" remove-source >/dev/null 2>&1; then \
+					python3 -c "$$source_cleanup_code" || remove_source_status=1; \
+				fi; \
+			fi; \
+			if [ "$$remove_source_status" -ne 0 ]; then \
+				echo "Warning: could not remove Bornona from GNOME input sources." >&2; \
+			fi; \
+		fi; \
 		rm -f "$$bindir/ibus-bornona"; \
 		rm -f "$$component_dir/ibus-bornona.xml"; \
 		rm -rf "$$pkgdatadir"; \

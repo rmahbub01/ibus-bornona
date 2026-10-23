@@ -54,8 +54,45 @@ else
 fi
 DATA_DIR="$INSTALL_PREFIX/share/ibus-bornona"
 
+remove_gnome_source() {
+    local binary="$1"
+    local python_cleanup='import ast, subprocess; schema="org.gnome.desktop.input-sources"; key="sources"; value=subprocess.check_output(["gsettings","get",schema,key],universal_newlines=True).strip(); value=value[len("@a(ss)"):].strip() if value.startswith("@a(ss)") else value; sources=ast.literal_eval(value); cleaned=[source for source in sources if tuple(source)!=("ibus","bornona")]; subprocess.run(["gsettings","set",schema,key,repr(cleaned)],check=True) if cleaned!=sources else None'
+    if [ "${EUID:-$(id -u)}" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+        local user_uid user_home user_runtime
+        user_uid="$(id -u "$SUDO_USER")" || return 1
+        user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)" || return 1
+        user_runtime="/run/user/$user_uid"
+        [ -S "$user_runtime/bus" ] || return 1
+        command -v runuser >/dev/null 2>&1 || return 1
+        runuser -u "$SUDO_USER" -- env \
+            HOME="$user_home" \
+            XDG_RUNTIME_DIR="$user_runtime" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$user_runtime/bus" \
+            "$binary" remove-source >/dev/null 2>&1 || runuser -u "$SUDO_USER" -- env \
+                HOME="$user_home" \
+                XDG_RUNTIME_DIR="$user_runtime" \
+                DBUS_SESSION_BUS_ADDRESS="unix:path=$user_runtime/bus" \
+                python3 -c "$python_cleanup"
+    else
+        "$binary" remove-source >/dev/null 2>&1 || python3 -c "$python_cleanup"
+    fi
+}
+
 if [ "$UNINSTALL" = true ]; then
     echo "Uninstalling ibus-bornona..."
+
+    REMOVE_SOURCE_BIN=""
+    for candidate in "$BINDIR/ibus-bornona" "$HOME/.local/bin/ibus-bornona" /usr/local/bin/ibus-bornona /usr/bin/ibus-bornona; do
+        if [ -x "$candidate" ]; then
+            REMOVE_SOURCE_BIN="$candidate"
+            break
+        fi
+    done
+    if [ -n "$REMOVE_SOURCE_BIN" ]; then
+        if ! remove_gnome_source "$REMOVE_SOURCE_BIN"; then
+            echo "Warning: could not remove Bornona from GNOME input sources." >&2
+        fi
+    fi
 
     rm -f "$BINDIR/ibus-bornona"
     rm -f "$HOME/.local/bin/ibus-bornona"
@@ -81,25 +118,6 @@ if [ "$UNINSTALL" = true ]; then
     rmdir "$HOME/.config/systemd/user/org.freedesktop.IBus.session.GNOME.service.d" 2>/dev/null || true
     if command -v systemctl >/dev/null 2>&1; then
         systemctl --user daemon-reload 2>/dev/null || true
-    fi
-
-    PYTHON_BIN="$(command -v python3 || command -v /usr/bin/python3 || echo "")"
-    if command -v gsettings >/dev/null 2>&1 && [ -n "$PYTHON_BIN" ]; then
-        CURRENT_SOURCES=$(gsettings get org.gnome.desktop.input-sources sources 2>/dev/null || echo "")
-        if [[ "$CURRENT_SOURCES" == *"('ibus', 'bornona')"* ]]; then
-            CLEANED_SOURCES=$($PYTHON_BIN -c "
-import ast
-try:
-    s = ast.literal_eval('''$CURRENT_SOURCES''')
-    s = [x for x in s if x != ('ibus', 'bornona')]
-    print(repr(s))
-except:
-    pass
-" 2>/dev/null || true)
-            if [ -n "$CLEANED_SOURCES" ]; then
-                gsettings set org.gnome.desktop.input-sources sources "$CLEANED_SOURCES" 2>/dev/null || true
-            fi
-        fi
     fi
 
     if command -v ibus >/dev/null 2>&1; then
