@@ -25,11 +25,19 @@ fn open_window(title: &str, html: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         gtk::init().map_err(|e| format!("cannot initialize GUI window: {e}"))?;
+        gtk::Window::set_default_icon_name("ibus-bornona");
+
         let window = gtk::Window::new(gtk::WindowType::Toplevel);
         window.set_title(title);
         window.set_default_size(1020, 500);
         window.set_position(gtk::WindowPosition::Center);
         window.set_resizable(true);
+        window.set_icon_name(Some("ibus-bornona"));
+
+        if let Ok(icon_path) = locate_icon() {
+            let _ = window.set_icon_from_file(&icon_path);
+        }
+
         window.connect_delete_event(|_, _| {
             gtk::main_quit();
             gtk::glib::Propagation::Proceed
@@ -48,6 +56,41 @@ fn open_window(title: &str, html: &str) -> Result<(), String> {
         let _ = (title, html);
         Err("layout popup is only supported on Linux".to_string())
     }
+}
+
+fn locate_icon() -> Result<PathBuf, String> {
+    let mut candidates = Vec::new();
+
+    // 1. Current working directory
+    if let Ok(cwd) = env::current_dir() {
+        candidates.push(cwd.join("data/logo/ibus-bornona.svg"));
+    }
+
+    // 2. Relative to executable path
+    if let Ok(exe) = env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join("../share/icons/hicolor/scalable/apps/ibus-bornona.svg"));
+            candidates.push(parent.join("../share/ibus-bornona/ibus-bornona.svg"));
+            candidates.push(parent.join("data/logo/ibus-bornona.svg"));
+        }
+    }
+
+    // 3. User local icon dirs
+    if let Ok(home) = env::var("HOME") {
+        candidates.push(PathBuf::from(home.clone()).join(".local/share/icons/hicolor/scalable/apps/ibus-bornona.svg"));
+        candidates.push(PathBuf::from(home).join(".local/share/ibus-bornona/ibus-bornona.svg"));
+    }
+
+    // 4. System icon dirs
+    candidates.push(PathBuf::from("/usr/share/icons/hicolor/scalable/apps/ibus-bornona.svg"));
+    candidates.push(PathBuf::from("/usr/local/share/icons/hicolor/scalable/apps/ibus-bornona.svg"));
+    candidates.push(PathBuf::from("/usr/share/ibus-bornona/ibus-bornona.svg"));
+    candidates.push(PathBuf::from("/usr/local/share/ibus-bornona/ibus-bornona.svg"));
+
+    candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .ok_or_else(|| "icon file not found on disk".to_string())
 }
 
 fn locate_page() -> Result<PathBuf, String> {

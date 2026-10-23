@@ -89,6 +89,19 @@ service to discover components in `~/.local` and refresh its component list
 when it starts. If Bornona is missing from **Settings > Keyboard > Input
 Sources**, run `ibus-bornona setup` and then check `ibus-bornona doctor`.
 
+On COSMIC (and other Wayland desktop environments), `ibus-bornona setup`
+configures Bornona in IBus (`preload-engines`), sets up environment configuration
+so local component files are recognized, configures the <kbd>Alt</kbd>+<kbd>Space</kbd>
+switcher, and installs the Bornona logo icon so it displays in the COSMIC panel
+status area / system tray and language switcher. Bornona works seamlessly across
+native Wayland, GTK, Qt, and XWayland applications.
+
+On KDE, XFCE, and other IBus desktops, setup registers Bornona with IBus; you
+can switch with <kbd>Alt</kbd>+<kbd>Space</kbd> or select it in your desktop's
+input-source settings. The system `make install` target installs the IBus
+component descriptor in `/usr/share/ibus/component`, the standard system
+component directory.
+
 For system-wide installation across all user accounts:
 
 ```bash

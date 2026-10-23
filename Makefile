@@ -2,8 +2,9 @@ PREFIX ?= /usr/local
 DESTDIR ?=
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
-IBUS_COMPONENT_DIR ?= $(DATADIR)/ibus/component
+IBUS_COMPONENT_DIR ?= /usr/share/ibus/component
 PKGDATADIR ?= $(DATADIR)/ibus-bornona
+ICONDIR ?= $(DATADIR)/icons/hicolor/scalable/apps
 
 all: build
 
@@ -15,16 +16,20 @@ install: build
 	install -d $(DESTDIR)$(BINDIR)
 	install -d $(DESTDIR)$(IBUS_COMPONENT_DIR)
 	install -d $(DESTDIR)$(PKGDATADIR)
+	install -d $(DESTDIR)$(ICONDIR)
 	install -m 755 target/release/ibus-bornona $(DESTDIR)$(BINDIR)/ibus-bornona
 	install -m 644 ibus-bornona.xml $(DESTDIR)$(IBUS_COMPONENT_DIR)/ibus-bornona.xml
 	install -m 644 data/bornona-keyboard.html $(DESTDIR)$(PKGDATADIR)/bornona-keyboard.html
 	install -m 644 data/Bornona.json $(DESTDIR)$(PKGDATADIR)/Bornona.json
+	install -m 644 data/logo/ibus-bornona.svg $(DESTDIR)$(ICONDIR)/ibus-bornona.svg
+	install -m 644 data/logo/ibus-bornona.svg $(DESTDIR)$(PKGDATADIR)/ibus-bornona.svg
 	@if [ -z "$(DESTDIR)" ]; then \
-		echo "Updating IBus cache..."; \
+		echo "Updating IBus and icon cache..."; \
 		if [ "$$(id -u)" -eq 0 ]; then \
 			ibus write-cache --system 2>/dev/null || true; \
 		fi; \
 		ibus write-cache 2>/dev/null || true; \
+		gtk-update-icon-cache -f -t $(DATADIR)/icons/hicolor 2>/dev/null || true; \
 		echo "Installation complete!"; \
 	fi
 
@@ -36,11 +41,13 @@ uninstall:
 	if [ -n "$(DESTDIR)" ]; then \
 		rm -f "$(DESTDIR)$(BINDIR)/ibus-bornona"; \
 		rm -f "$(DESTDIR)$(IBUS_COMPONENT_DIR)/ibus-bornona.xml"; \
+		rm -f "$(DESTDIR)$(ICONDIR)/ibus-bornona.svg"; \
 		rm -rf "$(DESTDIR)$(PKGDATADIR)"; \
 	else \
 		bindir="$(BINDIR)"; \
 		component_dir="$(IBUS_COMPONENT_DIR)"; \
 		pkgdatadir="$(PKGDATADIR)"; \
+		icondir="$(ICONDIR)"; \
 		remove_system_component=false; \
 		if [ "$(PREFIX)" = "/usr/local" ]; then remove_system_component=true; fi; \
 		if [ "$(PREFIX)" = "/usr/local" ] \
@@ -51,6 +58,7 @@ uninstall:
 			bindir="$(HOME)/.local/bin"; \
 			component_dir="$(HOME)/.local/share/ibus/component"; \
 			pkgdatadir="$(HOME)/.local/share/ibus-bornona"; \
+			icondir="$(HOME)/.local/share/icons/hicolor/scalable/apps"; \
 			remove_system_component=false; \
 		fi; \
 		if [ -x "$$bindir/ibus-bornona" ]; then \
@@ -61,8 +69,8 @@ uninstall:
 				user_home=$$(getent passwd "$$SUDO_USER" | cut -d: -f6) || remove_source_status=1; \
 				user_runtime="/run/user/$$user_uid"; \
 				if [ "$$remove_source_status" -eq 0 ] && [ -S "$$user_runtime/bus" ] && command -v runuser >/dev/null 2>&1; then \
-					if ! runuser -u "$$SUDO_USER" -- env HOME="$$user_home" XDG_RUNTIME_DIR="$$user_runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$$user_runtime/bus" "$$bindir/ibus-bornona" remove-source >/dev/null 2>&1; then \
-						runuser -u "$$SUDO_USER" -- env HOME="$$user_home" XDG_RUNTIME_DIR="$$user_runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$$user_runtime/bus" python3 -c "$$source_cleanup_code" || remove_source_status=1; \
+					if ! runuser -u "$$SUDO_USER" -- env HOME="$$user_home" XDG_CONFIG_HOME="$${XDG_CONFIG_HOME:-$$user_home/.config}" XDG_RUNTIME_DIR="$$user_runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$$user_runtime/bus" "$$bindir/ibus-bornona" remove-source >/dev/null 2>&1; then \
+						runuser -u "$$SUDO_USER" -- env HOME="$$user_home" XDG_CONFIG_HOME="$${XDG_CONFIG_HOME:-$$user_home/.config}" XDG_RUNTIME_DIR="$$user_runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$$user_runtime/bus" python3 -c "$$source_cleanup_code" || remove_source_status=1; \
 					fi; \
 				else \
 					remove_source_status=1; \
@@ -73,24 +81,35 @@ uninstall:
 				fi; \
 			fi; \
 			if [ "$$remove_source_status" -ne 0 ]; then \
-				echo "Warning: could not remove Bornona from GNOME input sources." >&2; \
+				echo "Warning: could not remove Bornona from desktop or IBus input settings." >&2; \
 			fi; \
 		fi; \
 		rm -f "$$bindir/ibus-bornona"; \
 		rm -f "$$component_dir/ibus-bornona.xml"; \
+		rm -f "$$icondir/ibus-bornona.svg"; \
 		rm -rf "$$pkgdatadir"; \
 		if [ "$$remove_system_component" = true ] && [ -x "$(BINDIR)/ibus-bornona" ]; then \
 			rm -f /usr/share/ibus/component/ibus-bornona.xml; \
+			rm -f /usr/share/icons/hicolor/scalable/apps/ibus-bornona.svg; \
+			rm -f /usr/local/share/icons/hicolor/scalable/apps/ibus-bornona.svg; \
 		fi; \
+		rm -f "$(HOME)/.config/autostart/ibus-daemon.desktop"; \
+		rm -f "$(HOME)/.config/autostart/ibus-bornona"*.desktop; \
 		rm -f "$(HOME)/.config/systemd/user/org.freedesktop.IBus.session.GNOME.service.d/ibus-bornona.conf"; \
 		rmdir "$(HOME)/.config/systemd/user/org.freedesktop.IBus.session.GNOME.service.d" 2>/dev/null || true; \
 		if command -v systemctl >/dev/null 2>&1; then \
 			if ! systemctl --user daemon-reload; then echo "Warning: could not reload the user systemd manager." >&2; fi; \
 		fi; \
+		if command -v gtk-update-icon-cache >/dev/null 2>&1; then \
+			gtk-update-icon-cache -f -t $(DATADIR)/icons/hicolor 2>/dev/null || true; \
+			gtk-update-icon-cache -f -t $(HOME)/.local/share/icons/hicolor 2>/dev/null || true; \
+		fi; \
+		pkill -x ibus-bornona 2>/dev/null || true; \
 		if command -v ibus >/dev/null 2>&1; then \
-			if [ "$$(id -u)" -eq 0 ] && ! ibus write-cache --system; then echo "Warning: could not refresh the system IBus registry." >&2; fi; \
-			if ! ibus write-cache; then echo "Warning: could not refresh the user IBus registry." >&2; fi; \
-			if ! ibus restart; then echo "Warning: could not restart IBus." >&2; fi; \
+			if [ "$$(id -u)" -eq 0 ]; then \
+				ibus write-cache --system </dev/null >/dev/null 2>&1 || true; \
+			fi; \
+			ibus write-cache </dev/null >/dev/null 2>&1 || true; \
 		fi; \
 		echo "Uninstallation complete."; \
 	fi

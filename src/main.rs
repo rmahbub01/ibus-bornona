@@ -11,13 +11,13 @@ use engine::{BornonaLayout, TypingConfig, TypingProcessor};
 use ibus::run_ibus_engine;
 
 const HELP: &str = "\
-ibus-bornona: Bornona Bengali Fixed Layout Input Method for IBus
+ibus-bornona: Bornona Bengali Fixed Layout Input Method for Linux
 USAGE:
     ibus-bornona <command>
 
 COMMANDS:
-    setup            Add Bornona to your DE input sources (Alt+Space to switch)
-    remove-source    Remove Bornona from GNOME input sources
+    setup            Configure Bornona for your desktop (Alt+Space to switch)
+    remove-source    Remove Bornona from desktop and IBus settings
     doctor           Check that everything is installed and running
     config           Show or change typing feature settings
     reset            Restore all typing features to their defaults
@@ -125,17 +125,17 @@ fn main() {
             println!("{}", setup::doctor());
             0
         }
-        Some("remove-source") if args.len() == 1 => match setup::remove_gnome_input_source() {
+        Some("remove-source") if args.len() == 1 => match setup::remove_input_method_config() {
             Ok(true) => {
-                println!("Removed Bornona from GNOME input sources.");
+                println!("Removed Bornona from desktop and IBus input-method settings.");
                 0
             }
             Ok(false) => {
-                println!("Bornona was not in GNOME input sources.");
+                println!("Bornona was not configured in desktop or IBus input-method settings.");
                 0
             }
             Err(error) => {
-                eprintln!("ibus-bornona: could not remove Bornona from GNOME input sources: {error}");
+                eprintln!("ibus-bornona: could not remove Bornona input-method settings: {error}");
                 1
             }
         },

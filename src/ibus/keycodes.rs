@@ -3,6 +3,7 @@
 
 use super::ffi::*;
 
+#[derive(Clone, Copy)]
 pub enum KeyAction {
     CommitAndPassThrough,
     Backspace,
