@@ -43,6 +43,10 @@ mod tests {
         assert_eq!(compose("ke"), "কে");
         assert_eq!(compose("Ke"), "খে");
         assert_eq!(compose("kE"), "কৈ");
+        assert_eq!(compose("leauT"), "লেআউট");
+        assert_eq!(compose("beaini"), "বেআইনি");
+        assert_eq!(compose("pai"), "পাই");
+        assert_eq!(compose("paik"), "পাইক");
     }
 
     #[test]
@@ -73,8 +77,25 @@ mod tests {
     #[test]
     fn automatic_chandra_position_and_vowel_order() {
         assert_eq!(compose("k@a"), "কাঁ");
-        assert_eq!(compose("ik"), "কি");
-        assert_eq!(compose("Ek"), "কৈ");
+        assert_eq!(compose("ig"), "ইগ");
+        assert_eq!(compose("gi"), "গি");
+        assert_eq!(compose("ik"), "ইক");
+        assert_eq!(compose("ki"), "কি");
+        assert_eq!(compose("Ek"), "ঐক");
+        assert_eq!(compose("kE"), "কৈ");
+
+        let old_config = TypingConfig {
+            old_kar_order: true,
+            ..TypingConfig::default()
+        };
+        assert_eq!(
+            crate::engine::processor::compose_with_config("ik", old_config.clone()),
+            "কি"
+        );
+        assert_eq!(
+            crate::engine::processor::compose_with_config("Ek", old_config),
+            "কৈ"
+        );
     }
 
     #[test]
@@ -129,12 +150,15 @@ mod tests {
     #[test]
     fn pending_vowel_is_visible_in_preedit_before_commit() {
         let layout = BornonaLayout::new();
-        let mut processor = TypingProcessor::default();
-        type_keys(&mut processor, &layout, "pai");
+        let mut processor = TypingProcessor::new(TypingConfig {
+            old_kar_order: true,
+            ..TypingConfig::default()
+        });
+        type_keys(&mut processor, &layout, " i");
 
-        assert_eq!(processor.buffer(), "পা");
-        assert_eq!(processor.preedit_text(), "পাই");
-        assert_eq!(processor.commit(), "পাই");
+        assert_eq!(processor.buffer(), " ");
+        assert_eq!(processor.preedit_text(), " ই");
+        assert_eq!(processor.commit(), " ই");
     }
 
     #[test]

@@ -20,7 +20,7 @@ impl Default for TypingConfig {
             auto_vowel: true,
             auto_chandra: true,
             old_reph: true,
-            old_kar_order: true,
+            old_kar_order: false,
             traditional_kar: false,
         }
     }
@@ -127,7 +127,6 @@ impl TypingProcessor {
         let last = self.buffer.chars().last().unwrap_or_default();
 
         if character.is_kar()
-            && self.config.old_kar_order
             && last == B_HASANTA
             && character.is_left_standing_kar()
         {
@@ -140,20 +139,10 @@ impl TypingProcessor {
         if character.is_kar() {
             if self.config.old_kar_order
                 && character.is_left_standing_kar()
-                && (self.buffer.is_empty() || last.is_vowel() || MARKS.contains(last))
+                && (self.buffer.is_empty() || MARKS.contains(last))
                 && last != B_HASANTA
             {
                 self.pending_kar = Some(character);
-                return;
-            }
-
-            if self.config.old_kar_order
-                && last == B_E_KAR
-                && matches!(character, B_AA_KAR | B_OU_KAR)
-            {
-                self.buffer.pop();
-                self.buffer
-                    .push(if character == B_AA_KAR { B_O_KAR } else { B_OU_KAR });
                 return;
             }
 
