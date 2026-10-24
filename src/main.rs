@@ -26,8 +26,41 @@ COMMANDS:
     version          Print the version
 
 CONFIG:
+    ibus-bornona config [<feature> <on|off>]
+
+FEATURES:
+    auto-vowel          Automatic Vowel Forming
+                        Possible values: on, off (default: on)
+
+    auto-chandra        Automatic Chandrabindu Position Fix
+                        Possible values: on, off (default: on)
+
+    old-reph            Old Style Reph
+                        Possible values: on, off (default: on)
+
+    traditional-kar     Traditional Kar Joining
+                        Possible values: on, off (default: off)
+";
+
+const CONFIG_HELP: &str = "\
+ibus-bornona config: Show or change typing feature settings
+
+USAGE:
+    ibus-bornona config
     ibus-bornona config <feature> <on|off>
-    Features: auto-vowel, auto-chandra, old-reph, traditional-kar
+
+FEATURES:
+    auto-vowel          Automatic Vowel Forming
+                        Possible values: on, off (default: on)
+
+    auto-chandra        Automatic Chandrabindu Position Fix
+                        Possible values: on, off (default: on)
+
+    old-reph            Old Style Reph
+                        Possible values: on, off (default: on)
+
+    traditional-kar     Traditional Kar Joining
+                        Possible values: on, off (default: off)
 ";
 
 fn run_interactive(config: TypingConfig) {
@@ -198,6 +231,14 @@ fn main() {
             print!("{HELP}");
             0
         }
+        Some("help") => {
+            if args.get(1).map(String::as_str) == Some("config") {
+                print!("{CONFIG_HELP}");
+            } else {
+                print!("{HELP}");
+            }
+            0
+        }
         None => {
             if atty_check() {
                 print!("{HELP}");
@@ -226,9 +267,14 @@ fn main() {
 }
 
 fn update_config(args: &[String]) -> Result<(), String> {
-    let mut config = config::load()?;
+    if args.iter().any(|a| a == "--help" || a == "-h") || args == ["help"] {
+        print!("{CONFIG_HELP}");
+        return Ok(());
+    }
+
     match args {
         [] => {
+            let config = config::load()?;
             for feature in [
                 "auto-vowel",
                 "auto-chandra",
@@ -251,6 +297,7 @@ fn update_config(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         [feature, state] => {
+            let mut config = config::load()?;
             let enabled = match state.as_str() {
                 "on" => true,
                 "off" => false,
@@ -281,4 +328,47 @@ fn atty_check() -> bool {
 unsafe extern "C" {
     #[link_name = "isatty"]
     fn libc_isatty(fd: std::ffi::c_int) -> std::ffi::c_int;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_help_shows_features_and_possible_values() {
+        for feature in ["auto-vowel", "auto-chandra", "old-reph", "traditional-kar"] {
+            assert!(CONFIG_HELP.contains(feature), "missing feature: {feature}");
+        }
+        assert!(CONFIG_HELP.contains("Possible values: on, off"));
+        assert!(CONFIG_HELP.contains("Automatic Vowel Forming"));
+        assert!(CONFIG_HELP.contains("Automatic Chandrabindu Position Fix"));
+        assert!(CONFIG_HELP.contains("Old Style Reph"));
+        assert!(CONFIG_HELP.contains("Traditional Kar Joining"));
+    }
+
+    #[test]
+    fn test_help_shows_features_and_possible_values() {
+        for feature in ["auto-vowel", "auto-chandra", "old-reph", "traditional-kar"] {
+            assert!(HELP.contains(feature), "missing feature: {feature}");
+        }
+        assert!(HELP.contains("Possible values: on, off"));
+    }
+
+    #[test]
+    fn test_update_config_help_flags() {
+        assert!(update_config(&["--help".to_string()]).is_ok());
+        assert!(update_config(&["-h".to_string()]).is_ok());
+        assert!(update_config(&["help".to_string()]).is_ok());
+        assert!(update_config(&["auto-vowel".to_string(), "--help".to_string()]).is_ok());
+    }
+
+    #[test]
+    fn test_update_config_invalid_arguments() {
+        assert!(update_config(&[
+            "invalid".to_string(),
+            "arguments".to_string(),
+            "here".to_string()
+        ])
+        .is_err());
+    }
 }
