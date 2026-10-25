@@ -106,11 +106,8 @@ unsafe extern "C" {
 
     pub fn ibus_factory_new(connection: *mut GDBusConnection) -> *mut IBusFactory;
 
-    pub fn ibus_engine_new(
-        engine_name: *const c_char,
-        path: *const c_char,
-        connection: *mut GDBusConnection,
-    ) -> *mut IBusEngine;
+    pub fn ibus_engine_get_type() -> usize;
+    pub fn g_object_new(object_type: usize, first_property_name: *const c_char, ...) -> *mut c_void;
 
     pub fn ibus_engine_commit_text(engine: *mut IBusEngine, text: *mut IBusText);
     pub fn ibus_engine_update_preedit_text(

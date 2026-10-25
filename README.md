@@ -108,6 +108,9 @@ so logout and reboot preserve startup. Setup keeps the existing XDG autostart
 fallback when the user systemd manager is unavailable. It also starts the IBus
 GTK panel with Wayland input-method support. Word suggestions are suppressed
 on COSMIC for a lighter input path.
+Setup disables IBus global-engine sharing on COSMIC. Each app keeps its own
+input method, so secure lock-screen prompts use the English keyboard while
+Bornona remains available in apps where you select it.
 GNOME and other IBus clients that support lookup tables use the native IBus
 candidate table. After upgrading, log out and back in so COSMIC and its lock
 screen pick up the updated environment; restart already-open applications
@@ -245,7 +248,7 @@ ibus-bornona compose "ami baqlaB gan gai"
 - **Configurable Suggestion Orientation**: Arrange popup candidates horizontally, vertically, or use the IBus system setting via `ibus-bornona config orientation <horizontal|vertical|system>`.
 - **Keyboard Switching Shortcut**: Configure the system input-source shortcut with `ibus-bornona config keyboard-switch-shortcut <modifier+key>`, for example `Ctrl+Space`; the default is `Alt+Space`.
 - **Preedit Composition**: Typed keys compose in IBus's underlined preedit buffer. Unhandled keys commit the typed composition without implicitly choosing the highlighted suggestion.
-- **Password and PIN Fields**: Bornona passes key events through unchanged in IBus fields marked for passwords, PINs, or hidden text, so credentials use the expected keyboard characters.
+- **Password and PIN Fields**: Bornona passes key events through unchanged in IBus fields marked for passwords, PINs, or hidden text.
 - **Composition-Aware Backspace**: <kbd>Backspace</kbd> restores the preedit state before the previous physical key, including automatic vowel ordering and conjunct transformations.
 - **Automatic Vowel Forming**: Initial vowel keys automatically form independent vowels (`a` -> `আ`, `i` -> `ই`, `u` -> `উ`, `o` -> `ও`, `A` -> `অ`).
 - **Direct Hasanta and Kar Input**: A single `h` immediately inserts Hasanta (`্`). A following vowel key inserts its Kar, so `ha` produces `্া`; left-standing `i` after Hasanta forms the independent vowel (`hi` -> `ই`).

@@ -23,12 +23,18 @@ struct EngineInstance {
     lookup_model: LookupModel,
     lookup_visible: bool,
     cosmic_session: bool,
+    cosmic_greeter: bool,
     password_input: bool,
 }
 
 fn is_sensitive_input(purpose: u32, hints: u32) -> bool {
     matches!(purpose, IBUS_INPUT_PURPOSE_PASSWORD | IBUS_INPUT_PURPOSE_PIN)
         || hints & IBUS_INPUT_HINT_HIDDEN_TEXT != 0
+}
+
+fn is_cosmic_greeter(client: &str) -> bool {
+    let client = client.to_ascii_lowercase();
+    client.contains("cosmic") && client.contains("greeter")
 }
 
 fn find_installed_icon_path() -> Option<String> {
@@ -294,11 +300,22 @@ unsafe extern "C" fn create_engine_cb(
 
     let id = ENGINE_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
     let path = CString::new(format!("/org/freedesktop/IBus/Engine/{id}")).unwrap();
-    let engine = ibus_engine_new(
+    let engine_name_property = CString::new("engine-name").unwrap();
+    let object_path_property = CString::new("object-path").unwrap();
+    let connection_property = CString::new("connection").unwrap();
+    let focus_id_property = CString::new("has-focus-id").unwrap();
+    let engine = g_object_new(
+        ibus_engine_get_type(),
+        engine_name_property.as_ptr(),
         engine_name,
+        object_path_property.as_ptr(),
         path.as_ptr(),
+        connection_property.as_ptr(),
         user_data as *mut GDBusConnection,
-    );
+        focus_id_property.as_ptr(),
+        1 as c_int,
+        std::ptr::null::<c_char>(),
+    ) as *mut IBusEngine;
     if engine.is_null() {
         return std::ptr::null_mut();
     }
@@ -330,6 +347,7 @@ unsafe extern "C" fn create_engine_cb(
         lookup_model: LookupModel::default(),
         lookup_visible: false,
         cosmic_session,
+        cosmic_greeter: false,
         password_input: false,
     }));
     let data = instance as *mut c_void;
@@ -355,6 +373,20 @@ unsafe extern "C" fn create_engine_cb(
                 unsafe extern "C" fn(*mut IBusEngine, *mut c_void),
                 GCallback,
             >(focus_out_cb),
+        ),
+        (
+            "focus-in-id",
+            std::mem::transmute::<
+                unsafe extern "C" fn(*mut IBusEngine, *const c_char, *const c_char, *mut c_void),
+                GCallback,
+            >(focus_in_id_cb),
+        ),
+        (
+            "focus-out-id",
+            std::mem::transmute::<
+                unsafe extern "C" fn(*mut IBusEngine, *const c_char, *mut c_void),
+                GCallback,
+            >(focus_out_id_cb),
         ),
         (
             "reset",
@@ -410,7 +442,7 @@ unsafe extern "C" fn process_key_event_cb(
         return 0;
     }
     let instance = &mut *(user_data as *mut EngineInstance);
-    if instance.password_input {
+    if instance.cosmic_greeter || instance.password_input {
         return 0;
     }
 
@@ -576,7 +608,29 @@ unsafe extern "C" fn focus_out_cb(engine: *mut IBusEngine, user_data: *mut c_voi
     if !user_data.is_null() {
         let instance = &mut *(user_data as *mut EngineInstance);
         commit_current_text(engine, instance);
+        instance.cosmic_greeter = false;
     }
+}
+
+unsafe extern "C" fn focus_in_id_cb(
+    _engine: *mut IBusEngine,
+    _object_path: *const c_char,
+    client: *const c_char,
+    user_data: *mut c_void,
+) {
+    if !user_data.is_null() {
+        let instance = &mut *(user_data as *mut EngineInstance);
+        instance.cosmic_greeter = !client.is_null()
+            && is_cosmic_greeter(&std::ffi::CStr::from_ptr(client).to_string_lossy());
+    }
+}
+
+unsafe extern "C" fn focus_out_id_cb(
+    engine: *mut IBusEngine,
+    _object_path: *const c_char,
+    user_data: *mut c_void,
+) {
+    focus_out_cb(engine, user_data);
 }
 
 unsafe extern "C" fn reset_cb(engine: *mut IBusEngine, user_data: *mut c_void) {
@@ -747,6 +801,13 @@ mod tests {
             super::IBUS_INPUT_HINT_HIDDEN_TEXT
         ));
         assert!(!is_sensitive_input(0, 0));
+    }
+
+    #[test]
+    fn cosmic_greeter_client_is_recognized_case_insensitively() {
+        assert!(super::is_cosmic_greeter("cosmic-greeter"));
+        assert!(super::is_cosmic_greeter("com.system76.Cosmic.Greeter"));
+        assert!(!super::is_cosmic_greeter("com.system76.Cosmic.Terminal"));
     }
 
     #[test]

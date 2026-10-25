@@ -692,6 +692,21 @@ pub fn configure_ibus_engines() -> Result<Vec<String>, String> {
     Ok(removed)
 }
 
+fn configure_cosmic_ibus_engine_scope() -> Result<(), String> {
+    if !is_cosmic() || !has_ibus_general_settings() {
+        return Ok(());
+    }
+
+    let current = run("gsettings", &["get", IBUS_GENERAL_SCHEMA, "use-global-engine"])?;
+    if current.trim() != "false" {
+        run(
+            "gsettings",
+            &["set", IBUS_GENERAL_SCHEMA, "use-global-engine", "false"],
+        )?;
+    }
+    Ok(())
+}
+
 pub fn normalize_keyboard_switch_shortcut(value: &str) -> Result<(String, String), String> {
     let parts: Vec<_> = value.split('+').map(str::trim).collect();
     if parts.len() < 2 || parts.iter().any(|part| part.is_empty()) {
@@ -1306,6 +1321,7 @@ pub fn setup() -> Result<String, String> {
     let mut removed_engines = Vec::new();
     if has_ibus_general_settings() {
         removed_engines = configure_ibus_engines()?;
+        configure_cosmic_ibus_engine_scope()?;
         configure_ibus_hotkeys(&accelerator)?;
         let _ = configure_ibus_panel();
     }
@@ -1433,6 +1449,18 @@ pub fn doctor() -> String {
             "Bornona is in IBus preload engines",
             "run `ibus-bornona setup`",
         );
+        if is_cosmic() {
+            let global_engine = run(
+                "gsettings",
+                &["get", IBUS_GENERAL_SCHEMA, "use-global-engine"],
+            )
+            .unwrap_or_default();
+            check(
+                global_engine.trim() == "false",
+                "COSMIC keeps input engines separate per application",
+                "run `ibus-bornona setup`",
+            );
+        }
     }
 
     let autostart_ok = if is_cosmic() && cosmic_ibus_service_configured() {
