@@ -142,6 +142,10 @@ pub fn feature_name(feature: &str) -> Option<&'static str> {
         "auto-chandra" => Some("Automatic Chandrabindu Position Fix"),
         "old-reph" => Some("Old Style Reph"),
         "traditional-kar" => Some("Traditional Kar Joining"),
+        "word-suggestion" | "suggestion" | "suggestions" => Some("Word Suggestions"),
+        "suggestion-orientation" | "orientation" => Some("Suggestion Orientation"),
+        "keyboard-switch-shortcut" => Some("Keyboard Switching Shortcut"),
+        "learning" => Some("Suggestion Learning"),
         _ => None,
     }
 }
@@ -152,24 +156,49 @@ pub fn set_feature(config: &mut TypingConfig, feature: &str, enabled: bool) -> b
         "auto-chandra" => config.auto_chandra = enabled,
         "old-reph" => config.old_reph = enabled,
         "traditional-kar" => config.traditional_kar = enabled,
+        "word-suggestion" | "suggestion" | "suggestions" => config.word_suggestion = enabled,
+        "learning" => config.learning = enabled,
         _ => return false,
     }
     true
 }
 
+pub fn set_orientation(config: &mut TypingConfig, orientation: crate::engine::SuggestionOrientation) {
+    config.suggestion_orientation = orientation;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::SuggestionOrientation;
 
     #[test]
     fn feature_updates_change_only_the_requested_setting() {
         let mut config = TypingConfig::default();
+
+        assert!(!config.word_suggestion);
+        assert!(config.learning);
+        assert_eq!(config.keyboard_switch_shortcut, "Alt+Space");
 
         assert!(set_feature(&mut config, "auto-vowel", false));
         assert!(!config.auto_vowel);
         assert!(config.auto_chandra);
         assert!(config.old_reph);
         assert!(!config.traditional_kar);
+        assert!(!config.word_suggestion);
+        assert_eq!(config.suggestion_orientation, SuggestionOrientation::Horizontal);
+
+        assert!(set_feature(&mut config, "suggestion", false));
+        assert!(!config.word_suggestion);
+        assert!(set_feature(&mut config, "learning", false));
+        assert!(!config.learning);
+
+        set_orientation(&mut config, SuggestionOrientation::Vertical);
+        assert_eq!(config.suggestion_orientation, SuggestionOrientation::Vertical);
+        set_orientation(&mut config, SuggestionOrientation::System);
+        assert_eq!(config.suggestion_orientation, SuggestionOrientation::System);
+
         assert!(!set_feature(&mut config, "unknown", true));
     }
+
 }

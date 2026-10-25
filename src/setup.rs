@@ -12,7 +12,11 @@ const WM_KEYBINDINGS_SCHEMA: &str = "org.gnome.desktop.wm.keybindings";
 const IBUS_HOTKEY_SCHEMA: &str = "org.freedesktop.ibus.general.hotkey";
 const IBUS_GENERAL_SCHEMA: &str = "org.freedesktop.ibus.general";
 const GNOME_IBUS_UNIT: &str = "org.freedesktop.IBus.session.GNOME.service";
-const GNOME_IBUS_EXEC_START: &str = "sh -c 'exec /usr/bin/ibus-daemon --panel disable --cache=none $([ \"$XDG_SESSION_TYPE\" = \"x11\" ] && echo \"--xim\")'";
+const COSMIC_IBUS_SERVICE: &str = "ibus-bornona.service";
+const GENERIC_IBUS_UNIT: &str = "org.freedesktop.IBus.session.generic.service";
+const COSMIC_IBUS_MARKER: &str = "# Managed by ibus-bornona.";
+const COSMIC_IBUS_LINK_MARKER: &str = "# ibus-bornona owns the COSMIC session link";
+const GNOME_IBUS_EXEC_START: &str = "sh -c 'exec /usr/bin/ibus-daemon --panel disable --cache=none $([ \"$XDG_SESSION_TYPE\" = \"x11\" ] && echo \"--xim\") 2>/dev/null'";
 
 fn is_cosmic() -> bool {
     ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
@@ -28,14 +32,19 @@ fn is_gnome() -> bool {
         .any(|desktop| desktop.to_ascii_lowercase().contains("gnome"))
 }
 
-fn has_gnome_input_sources() -> bool {
+fn has_gnome_schema() -> bool {
     run("gsettings", &["list-keys", SCHEMA]).is_ok()
+}
+
+fn has_gnome_input_sources() -> bool {
+    is_gnome() && has_gnome_schema()
 }
 
 fn has_ibus_general_settings() -> bool {
     run("gsettings", &["list-keys", IBUS_GENERAL_SCHEMA]).is_ok()
 }
 
+#[allow(dead_code)]
 fn is_wayland() -> bool {
     env::var("XDG_SESSION_TYPE")
         .map(|v| v.to_ascii_lowercase() == "wayland")
@@ -76,69 +85,346 @@ fn is_component_installed() -> bool {
             .any(|path| path.join("ibus-bornona.xml").exists())
 }
 
-fn autostart_dir() -> Result<PathBuf, String> {
-    let config_home = match env::var_os("XDG_CONFIG_HOME") {
+fn config_home() -> Result<PathBuf, String> {
+    match env::var_os("XDG_CONFIG_HOME") {
         Some(path) if !path.is_empty() => {
             let path = PathBuf::from(path);
             if !path.is_absolute() {
                 return Err("XDG_CONFIG_HOME must be an absolute path".into());
             }
-            path
+            Ok(path)
         }
         _ => env::var_os("HOME")
             .map(PathBuf::from)
-            .ok_or_else(|| "HOME is not set".to_string())?
-            .join(".config"),
-    };
-    Ok(config_home.join("autostart"))
+            .map(|home| home.join(".config"))
+            .ok_or_else(|| "HOME is not set".to_string()),
+    }
+}
+
+fn autostart_dir() -> Result<PathBuf, String> {
+    Ok(config_home()?.join("autostart"))
 }
 
 const EMBEDDED_ICON_SVG: &str = include_str!("../data/logo/ibus-bornona.svg");
+const EMBEDDED_ICON_PNG: &[u8] = include_bytes!("../data/logo/ibus-bornona.png");
 
 pub fn is_icon_installed() -> bool {
     let xdg_data_home = env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
 
-    Path::new("/usr/share/icons/hicolor/scalable/apps/ibus-bornona.svg").exists()
-        || Path::new("/usr/local/share/icons/hicolor/scalable/apps/ibus-bornona.svg").exists()
-        || xdg_data_home
-            .map(|data_home| data_home.join("icons/hicolor/scalable/apps/ibus-bornona.svg"))
-            .map(|path| path.exists())
-            .unwrap_or(false)
-        || env::var_os("XDG_DATA_DIRS")
-            .into_iter()
-            .flat_map(|paths| env::split_paths(&paths).collect::<Vec<_>>())
-            .any(|path| path.join("icons/hicolor/scalable/apps/ibus-bornona.svg").exists())
+    let icon_names = [
+        "icons/hicolor/scalable/apps/ibus-bornona.svg",
+        "icons/hicolor/128x128/apps/ibus-bornona.png",
+        "ibus-bornona/ibus-bornona.png",
+        "ibus-bornona/ibus-bornona.svg",
+    ];
+
+    for prefix in ["/usr/share", "/usr/local/share"] {
+        for icon in &icon_names {
+            if Path::new(prefix).join(icon).exists() {
+                return true;
+            }
+        }
+    }
+
+    if let Some(data_home) = xdg_data_home {
+        for icon in &icon_names {
+            if data_home.join(icon).exists() {
+                return true;
+            }
+        }
+    }
+
+    env::var_os("XDG_DATA_DIRS")
+        .into_iter()
+        .flat_map(|paths| env::split_paths(&paths).collect::<Vec<_>>())
+        .any(|path| icon_names.iter().any(|icon| path.join(icon).exists()))
 }
 
 pub fn install_user_icon() -> Result<(), String> {
     let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
         return Ok(());
     };
-    let icon_dir = home.join(".local/share/icons/hicolor/scalable/apps");
-    let icon_path = icon_dir.join("ibus-bornona.svg");
-    if !icon_path.is_file() {
-        std::fs::create_dir_all(&icon_dir)
-            .map_err(|e| format!("cannot create {}: {e}", icon_dir.display()))?;
-        std::fs::write(&icon_path, EMBEDDED_ICON_SVG)
-            .map_err(|e| format!("cannot write {}: {e}", icon_path.display()))?;
-        let _ = Command::new("gtk-update-icon-cache")
-            .args(["-f", "-t", home.join(".local/share/icons/hicolor").to_str().unwrap()])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
+    let svg_dir = home.join(".local/share/icons/hicolor/scalable/apps");
+    let png_dir = home.join(".local/share/icons/hicolor/128x128/apps");
+    let pkgdata_dir = home.join(".local/share/ibus-bornona");
+
+    let _ = std::fs::create_dir_all(&svg_dir);
+    let _ = std::fs::create_dir_all(&png_dir);
+    let _ = std::fs::create_dir_all(&pkgdata_dir);
+
+    let _ = std::fs::write(svg_dir.join("ibus-bornona.svg"), EMBEDDED_ICON_SVG);
+    let _ = std::fs::write(png_dir.join("ibus-bornona.png"), EMBEDDED_ICON_PNG);
+    let _ = std::fs::write(pkgdata_dir.join("ibus-bornona.png"), EMBEDDED_ICON_PNG);
+    let _ = std::fs::write(pkgdata_dir.join("ibus-bornona.svg"), EMBEDDED_ICON_SVG);
+
+    let _ = Command::new("gtk-update-icon-cache")
+        .args(["-f", "-t", home.join(".local/share/icons/hicolor").to_str().unwrap()])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
     Ok(())
 }
 
 fn remove_legacy_desktop_files() {
     if let Ok(dir) = autostart_dir() {
-        let _ = std::fs::remove_file(dir.join("ibus-daemon.desktop"));
         let _ = std::fs::remove_file(dir.join("ibus-bornona-cosmic.desktop"));
         let _ = std::fs::remove_file(dir.join("ibus-bornona.desktop"));
     }
+}
+
+fn install_autostart_desktop() -> Result<(), String> {
+    let dir = autostart_dir()?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let desktop_file = dir.join("ibus-daemon.desktop");
+    let panel = find_wayland_ibus_panel();
+    let home = env::var("HOME").unwrap_or_default();
+    let comp_path = if !home.is_empty() {
+        format!("{home}/.local/share/ibus/component:/usr/share/ibus/component:/usr/local/share/ibus/component")
+    } else {
+        "/usr/share/ibus/component:/usr/local/share/ibus/component".to_string()
+    };
+    let contents = autostart_desktop_contents(&comp_path, panel.as_deref());
+    std::fs::write(&desktop_file, contents)
+        .map_err(|e| format!("cannot write {}: {e}", desktop_file.display()))?;
+    reload_user_systemd_manager()?;
+    Ok(())
+}
+
+fn cosmic_ibus_service_contents(
+    component_path: &str,
+    daemon_path: &str,
+    panel: &str,
+    owns_link: bool,
+) -> String {
+    format!(
+        "{}\n{}[Unit]\nPartOf=cosmic-session.target\nAfter=graphical-session-pre.target\n\n[Service]\nType=exec\nEnvironment=\"IBUS_COMPONENT_PATH={}\"\nEnvironment=\"XMODIFIERS=@im=ibus\"\nExecStart=\"{}\" --replace --xim --restart --cache=none \"{}\"\nRestart=on-failure\nRestartSec=2s\n\n[Install]\nWantedBy=cosmic-session.target\n",
+        COSMIC_IBUS_MARKER,
+        if owns_link {
+            format!("{COSMIC_IBUS_LINK_MARKER}\n")
+        } else {
+            String::new()
+        },
+        systemd_escape(component_path),
+        systemd_escape(daemon_path),
+        systemd_escape(&format!("--panel={}", wayland_panel_command(panel)))
+    )
+}
+
+fn systemd_escape(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('%', "%%")
+}
+
+fn configure_cosmic_ibus_service() -> Result<bool, String> {
+    if !is_cosmic()
+        || !env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .is_some_and(|runtime_dir| runtime_dir.join("systemd/private").exists())
+        || run("systemctl", &["--user", "cat", "cosmic-session.target"]).is_err()
+    {
+        return Ok(false);
+    }
+
+    let panel = find_wayland_ibus_panel().ok_or_else(|| {
+        "COSMIC Wayland input requires `ibus-ui-gtk3`; install the IBus GTK panel and run `ibus-bornona setup` again".to_string()
+    })?;
+    let daemon_path = run("which", &["ibus-daemon"])?;
+    let daemon_path = daemon_path.trim();
+    if !Path::new(daemon_path).is_absolute() {
+        return Err("cannot locate an absolute path for ibus-daemon".into());
+    }
+    let unit_dir = config_home()?.join("systemd/user");
+    std::fs::create_dir_all(&unit_dir)
+        .map_err(|error| format!("cannot create {}: {error}", unit_dir.display()))?;
+    let unit_file = unit_dir.join(COSMIC_IBUS_SERVICE);
+    let previous_contents = match std::fs::read_to_string(&unit_file) {
+        Ok(contents) if contents.contains(COSMIC_IBUS_MARKER) => contents,
+        Ok(_) => {
+            return Err(format!(
+                "refusing to replace unrecognized unit {}",
+                unit_file.display()
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("cannot read {}: {error}", unit_file.display())),
+    };
+    let wants_dir = unit_dir.join("cosmic-session.target.wants");
+    std::fs::create_dir_all(&wants_dir)
+        .map_err(|error| format!("cannot create {}: {error}", wants_dir.display()))?;
+    let link = wants_dir.join(COSMIC_IBUS_SERVICE);
+    let previous_link_owned = previous_contents.contains(COSMIC_IBUS_LINK_MARKER);
+    let mut owns_link = previous_link_owned;
+    match std::fs::read_link(&link) {
+        Ok(existing) if existing == unit_file && previous_link_owned => {}
+        Ok(existing) if existing == unit_file => {
+            return Err(format!(
+                "refusing to adopt unexpected systemd link {}",
+                link.display()
+            ));
+        }
+        Ok(_) => {
+            return Err(format!(
+                "refusing to replace unexpected systemd link {}",
+                link.display()
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            owns_link = true;
+        }
+        Err(error) => return Err(format!("cannot read {}: {error}", link.display())),
+    }
+    let contents = cosmic_ibus_service_contents(
+        &component_path_env(),
+        daemon_path,
+        &panel,
+        owns_link,
+    );
+    std::fs::write(&unit_file, contents)
+        .map_err(|error| format!("cannot write {}: {error}", unit_file.display()))?;
+    if owns_link {
+        match std::fs::symlink_metadata(&link) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                std::os::unix::fs::symlink(&unit_file, &link)
+                    .map_err(|error| format!("cannot create {}: {error}", link.display()))?;
+            }
+            Ok(_) => {}
+            Err(error) => return Err(format!("cannot inspect {}: {error}", link.display())),
+        }
+    }
+
+    remove_owned_autostart_desktop()?;
+    let _ = remove_legacy_generic_cosmic_service(&unit_dir)?;
+    reload_user_systemd_manager()?;
+    run("systemctl", &["--user", "restart", COSMIC_IBUS_SERVICE])?;
+    Ok(true)
+}
+
+fn remove_owned_autostart_desktop() -> Result<(), String> {
+    let dir = autostart_dir()?;
+    let desktop_file = dir.join("ibus-daemon.desktop");
+    match std::fs::read_to_string(&desktop_file) {
+        Ok(contents) if contents.contains("Comment=Start IBus daemon with Bornona support") => {
+            std::fs::remove_file(&desktop_file)
+                .map_err(|error| format!("cannot remove {}: {error}", desktop_file.display()))
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("cannot read {}: {error}", desktop_file.display())),
+    }
+}
+
+fn remove_legacy_generic_cosmic_service(unit_dir: &Path) -> Result<bool, String> {
+    let dropin_dir = unit_dir.join(format!("{GENERIC_IBUS_UNIT}.d"));
+    let dropin = dropin_dir.join("ibus-bornona.conf");
+    let link = unit_dir
+        .join("cosmic-session.target.wants")
+        .join(GENERIC_IBUS_UNIT);
+    let owns_link = match std::fs::read_to_string(&dropin) {
+        Ok(contents) => contents.contains(COSMIC_IBUS_LINK_MARKER),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(format!("cannot read {}: {error}", dropin.display())),
+    };
+    if owns_link {
+        for path in [&link, &dropin] {
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("cannot remove {}: {error}", path.display())),
+            }
+        }
+        let _ = std::fs::remove_dir(&dropin_dir);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+fn cosmic_ibus_service_configured() -> bool {
+    let Ok(config_home) = config_home() else {
+        return false;
+    };
+    let unit_dir = config_home.join("systemd/user");
+    let service = unit_dir.join(COSMIC_IBUS_SERVICE);
+    std::fs::read_to_string(service)
+        .is_ok_and(|contents| contents.contains(COSMIC_IBUS_MARKER))
+        && unit_dir
+            .join("cosmic-session.target.wants")
+            .join(COSMIC_IBUS_SERVICE)
+            .is_symlink()
+}
+
+fn reload_user_systemd_manager() -> Result<(), String> {
+    let Some(runtime_dir) = env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from) else {
+        return Ok(());
+    };
+    if !runtime_dir.join("systemd/private").exists() {
+        return Ok(());
+    }
+
+    let output = Command::new("systemctl")
+        .args(["--user", "daemon-reload"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| format!("cannot reload user systemd manager: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot reload user systemd manager: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+fn desktop_exec_arg(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('`', "\\`")
+        .replace('$', "\\$")
+        .replace('%', "%%");
+    format!("\"{escaped}\"")
+}
+
+fn autostart_desktop_contents(comp_path: &str, panel: Option<&str>) -> String {
+    let mut args = vec![
+        "env".to_string(),
+        desktop_exec_arg(&format!("IBUS_COMPONENT_PATH={comp_path}")),
+        "ibus-daemon".to_string(),
+        "--daemonize".to_string(),
+        "--replace".to_string(),
+        "--xim".to_string(),
+        "--restart".to_string(),
+        "--cache=none".to_string(),
+    ];
+    if let Some(panel) = panel {
+        args.push(desktop_exec_arg(&format!(
+            "--panel={}",
+            wayland_panel_command(panel)
+        )));
+    }
+    format!(
+        "[Desktop Entry]\n\
+Type=Application\n\
+Name=IBus Daemon\n\
+Comment=Start IBus daemon with Bornona support\n\
+Exec={}\n\
+Terminal=false\n\
+NotShowIn=GNOME;\n",
+args.join(" ")
+    )
+}
+
+fn environment_conf_contents() -> String {
+    String::from(
+        "IBUS_COMPONENT_PATH=\"${HOME}/.local/share/ibus/component:/usr/share/ibus/component:/usr/local/share/ibus/component\"\nXMODIFIERS=@im=ibus\n",
+    )
 }
 
 fn install_environment_conf() -> Result<(), String> {
@@ -149,10 +435,58 @@ fn install_environment_conf() -> Result<(), String> {
     std::fs::create_dir_all(&env_dir)
         .map_err(|e| format!("cannot create {}: {e}", env_dir.display()))?;
     let env_file = env_dir.join("50-ibus-bornona.conf");
-    let contents = "IBUS_COMPONENT_PATH=\"${HOME}/.local/share/ibus/component:/usr/share/ibus/component:/usr/local/share/ibus/component\"\n";
+    let contents = environment_conf_contents();
     std::fs::write(&env_file, contents)
         .map_err(|e| format!("cannot write {}: {e}", env_file.display()))?;
     Ok(())
+}
+
+fn import_session_environment() {
+    let component_path = component_path_env();
+    let variables = vec![
+        format!("IBUS_COMPONENT_PATH={component_path}"),
+        "XMODIFIERS=@im=ibus".to_string(),
+    ];
+
+    if is_cosmic() {
+        let mut dbus_args = vec!["--systemd".to_string()];
+        dbus_args.extend(variables.iter().cloned());
+        dbus_args.extend([
+            "GTK_IM_MODULE=".to_string(),
+            "QT_IM_MODULE=".to_string(),
+        ]);
+        let dbus_args = dbus_args.iter().map(String::as_str).collect::<Vec<_>>();
+        match run_command_status(
+            "dbus-update-activation-environment",
+            &dbus_args,
+            &[],
+        ) {
+            Ok(true) => {}
+            Ok(false) => eprintln!("ibus-bornona: could not update D-Bus activation environment"),
+            Err(error) => eprintln!("ibus-bornona: {error}"),
+        }
+    }
+
+    let mut args = vec!["--user", "set-environment"];
+    args.extend(variables.iter().map(String::as_str));
+    let _ = Command::new("systemctl")
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    let _ = Command::new("systemctl")
+        .args([
+            "--user",
+            "unset-environment",
+            "GTK_IM_MODULE",
+            "QT_IM_MODULE",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 fn find_wayland_ibus_panel() -> Option<String> {
@@ -165,7 +499,34 @@ fn find_wayland_ibus_panel() -> Option<String> {
             return Some(path.to_string());
         }
     }
-    run("which", &["ibus-ui-gtk3"]).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    run("which", &["ibus-ui-gtk3"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn wayland_panel_command(panel: &str) -> String {
+    format!("{panel} -i")
+}
+
+fn ibus_daemon_uses_wayland_panel(panel: &str) -> bool {
+    Command::new("pgrep")
+        .args(["-a", "-x", "ibus-daemon"])
+        .output()
+        .map(|output| {
+            output.status.success()
+                && daemon_command_uses_wayland_panel(
+                    &String::from_utf8_lossy(&output.stdout),
+                    panel,
+                )
+        })
+        .unwrap_or(false)
+}
+
+fn daemon_command_uses_wayland_panel(commands: &str, panel: &str) -> bool {
+    commands
+    .lines()
+    .any(|line| line.contains(panel) && line.contains("-i"))
 }
 
 /// Run a command and return its stdout, or an error string if failed.
@@ -331,14 +692,141 @@ pub fn configure_ibus_engines() -> Result<Vec<String>, String> {
     Ok(removed)
 }
 
-pub fn configure_ibus_hotkeys() -> Result<(), String> {
+pub fn normalize_keyboard_switch_shortcut(value: &str) -> Result<(String, String), String> {
+    let parts: Vec<_> = value.split('+').map(str::trim).collect();
+    if parts.len() < 2 || parts.iter().any(|part| part.is_empty()) {
+        return Err("shortcut must include a modifier and key, for example `Alt+Space`".into());
+    }
+
+    let mut modifiers = Vec::new();
+    for modifier in &parts[..parts.len() - 1] {
+        let normalized = match modifier.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => "Ctrl",
+            "alt" => "Alt",
+            "shift" => "Shift",
+            "super" | "meta" => "Super",
+            _ => return Err(format!("unsupported shortcut modifier `{modifier}`")),
+        };
+        if modifiers.contains(&normalized) {
+            return Err(format!("duplicate shortcut modifier `{modifier}`"));
+        }
+        modifiers.push(normalized);
+    }
+
+    let key = parts[parts.len() - 1];
+    let (display_key, accelerator_key) = match key.to_ascii_lowercase().as_str() {
+        "space" => ("Space".to_string(), "space".to_string()),
+        "tab" => ("Tab".to_string(), "Tab".to_string()),
+        "enter" | "return" => ("Enter".to_string(), "Return".to_string()),
+        "esc" | "escape" => ("Escape".to_string(), "Escape".to_string()),
+        "backspace" => ("Backspace".to_string(), "BackSpace".to_string()),
+        "left" => ("Left".to_string(), "Left".to_string()),
+        "right" => ("Right".to_string(), "Right".to_string()),
+        "up" => ("Up".to_string(), "Up".to_string()),
+        "down" => ("Down".to_string(), "Down".to_string()),
+        key if key.len() == 1 && key.as_bytes()[0].is_ascii_alphabetic() => {
+            (key.to_ascii_uppercase(), key.to_string())
+        }
+        key if key.len() == 1 && key.as_bytes()[0].is_ascii_digit() => {
+            (key.to_string(), key.to_string())
+        }
+        key if key.starts_with('f')
+            && key[1..]
+                .parse::<u8>()
+                .is_ok_and(|number| (1..=35).contains(&number)) =>
+        {
+            let key = key.to_ascii_uppercase();
+            (key.clone(), key)
+        }
+        _ => {
+            return Err(format!(
+                "unsupported shortcut key `{key}`; use a letter, digit, F1-F35, or a named key"
+            ));
+        }
+    };
+
+    let modifier_order = ["Ctrl", "Alt", "Shift", "Super"];
+    let mut display_parts = Vec::new();
+    let mut accelerator = String::new();
+    for modifier in modifier_order {
+        if modifiers.contains(&modifier) {
+            display_parts.push(modifier);
+            accelerator.push_str(match modifier {
+                "Ctrl" => "<Control>",
+                "Alt" => "<Alt>",
+                "Shift" => "<Shift>",
+                "Super" => "<Super>",
+                _ => unreachable!(),
+            });
+        }
+    }
+    display_parts.push(&display_key);
+    accelerator.push_str(&accelerator_key);
+    Ok((display_parts.join("+"), accelerator))
+}
+
+pub fn apply_keyboard_switch_shortcut(shortcut: &str) -> Result<(), String> {
+    let (_, accelerator) = normalize_keyboard_switch_shortcut(shortcut)?;
+    let mut configured = false;
+    if is_gnome() && has_gnome_schema() {
+        configure_gnome_switch_shortcut(&accelerator)?;
+        configured = true;
+    }
+    if has_ibus_general_settings() {
+        configure_ibus_hotkeys(&accelerator)?;
+        configured = true;
+    }
+    if !configured {
+        return Err("no supported GNOME or IBus shortcut settings are available".into());
+    }
+    Ok(())
+}
+
+fn configure_ibus_hotkeys(accelerator: &str) -> Result<(), String> {
+    let triggers = format!("['{accelerator}']");
+    let next_engine = format!("['{accelerator}']");
+    run(
+        "gsettings",
+        &["set", IBUS_HOTKEY_SCHEMA, "triggers", &triggers],
+    )?;
+    run(
+        "gsettings",
+        &["set", IBUS_HOTKEY_SCHEMA, "next-engine", &next_engine],
+    )?;
+    Ok(())
+}
+
+fn remove_legacy_cosmic_toggle_shortcut() -> Result<bool, String> {
+    let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
+        return Ok(false);
+    };
+    let custom_file = home.join(".config/cosmic/com.system76.CosmicSettings.Shortcuts/v1/custom");
+    if !custom_file.is_file() {
+        return Ok(false);
+    }
+
+    let content = std::fs::read_to_string(&custom_file)
+        .map_err(|error| format!("cannot read {}: {error}", custom_file.display()))?;
+    let filtered: Vec<_> = content
+        .lines()
+        .filter(|line| !line.contains("ibus-bornona toggle"))
+        .collect();
+    if filtered.len() == content.lines().count() {
+        return Ok(false);
+    }
+    std::fs::write(&custom_file, filtered.join("\n") + "\n")
+        .map_err(|error| format!("cannot update {}: {error}", custom_file.display()))?;
+    Ok(true)
+}
+
+pub fn configure_ibus_panel() -> Result<(), String> {
     let _ = run(
         "gsettings",
-        &["set", IBUS_HOTKEY_SCHEMA, "triggers", "['<Alt>space']"],
+        &["set", "org.freedesktop.ibus.panel", "show-icon-on-systray", "true"],
     );
     let _ = run(
         "gsettings",
-        &["set", IBUS_HOTKEY_SCHEMA, "next-engine", "['<Alt>space', 'Alt+Shift_L']"],
+        &["set", "org.freedesktop.ibus.panel", "show", "0"],
     );
     Ok(())
 }
@@ -441,6 +929,9 @@ pub fn retain_configured_engines(
 }
 
 fn configure_gnome_component_path() -> Result<bool, String> {
+    if !is_gnome() {
+        return Ok(false);
+    }
     let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
         return Ok(false);
     };
@@ -480,11 +971,29 @@ pub fn engine_registered() -> bool {
 /// Ensure ibus-daemon is running and knows the Bornona engine.
 pub fn ensure_engine_registered() -> Result<(), String> {
     let comp_path = component_path_env();
-    let envs = [("IBUS_COMPONENT_PATH", comp_path.as_str())];
+    let envs = [
+        ("IBUS_COMPONENT_PATH", comp_path.as_str()),
+        ("XMODIFIERS", "@im=ibus"),
+    ];
 
     let _ = run_command_status("ibus", &["write-cache"], &envs);
 
-    if engine_registered() {
+    let panel = if is_gnome() {
+        None
+    } else {
+        find_wayland_ibus_panel()
+    };
+    if is_cosmic() && panel.is_none() {
+        return Err(
+            "COSMIC Wayland input requires `ibus-ui-gtk3`; install the IBus GTK panel and run `ibus-bornona setup` again"
+                .into(),
+        );
+    }
+    let cosmic_panel_ready = !is_cosmic()
+        || panel
+            .as_deref()
+            .is_some_and(ibus_daemon_uses_wayland_panel);
+    if engine_registered() && cosmic_panel_ready {
         return Ok(());
     }
 
@@ -494,20 +1003,27 @@ pub fn ensure_engine_registered() -> Result<(), String> {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    let panel_arg = find_wayland_ibus_panel();
     let mut daemon_cmd = Command::new("ibus-daemon");
     daemon_cmd.env("IBUS_COMPONENT_PATH", &comp_path);
+    daemon_cmd.env("XMODIFIERS", "@im=ibus");
+    let mut args = vec!["-drxR", "--cache=none"];
+    let panel_arg;
+    if daemon_running && is_cosmic() && panel.is_some() {
+        args.push("--replace");
+    }
+    if is_gnome() {
+        args.push("--panel=disable");
+    } else if let Some(panel) = panel {
+        panel_arg = wayland_panel_command(&panel);
+        args.push("--panel");
+        args.push(&panel_arg);
+    }
+    daemon_cmd.args(&args);
     daemon_cmd.stdin(std::process::Stdio::null());
     daemon_cmd.stdout(std::process::Stdio::null());
     daemon_cmd.stderr(std::process::Stdio::null());
-    daemon_cmd.args(["-drx", "-t", "refresh"]);
-    if is_wayland() {
-        if let Some(panel) = panel_arg {
-            daemon_cmd.arg(format!("--panel={panel} --enable-wayland-im"));
-        }
-    }
 
-    if daemon_running {
+    if daemon_running && !(is_cosmic() && find_wayland_ibus_panel().is_some()) {
         let _ = run_command_status("ibus", &["restart"], &envs);
         thread::sleep(Duration::from_millis(500));
         if !engine_registered() {
@@ -647,7 +1163,7 @@ pub fn remove_gnome_input_source() -> Result<bool, String> {
 pub fn remove_input_method_config() -> Result<bool, String> {
     let mut changed = false;
     let mut errors = Vec::new();
-    if has_gnome_input_sources() {
+    if has_gnome_schema() {
         match remove_gnome_input_source() {
             Ok(removed) => changed |= removed,
             Err(error) => errors.push(error),
@@ -658,26 +1174,107 @@ pub fn remove_input_method_config() -> Result<bool, String> {
         Err(error) => errors.push(error),
     }
     remove_legacy_desktop_files();
+    remove_legacy_cosmic_toggle_shortcut()?;
+    match remove_cosmic_ibus_service() {
+        Ok(removed) => changed |= removed,
+        Err(error) => errors.push(error),
+    }
+    if let Ok(dir) = autostart_dir() {
+        let file = dir.join("ibus-daemon.desktop");
+        if file.is_file() {
+            let _ = std::fs::remove_file(file);
+            changed = true;
+        }
+    }
+    if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+        let conf = env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"))
+            .join("environment.d/50-ibus-bornona.conf");
+        if conf.is_file() {
+            let _ = std::fs::remove_file(conf);
+            changed = true;
+        }
+        let config_home = env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"));
+        let gnome_dropin = config_home.join(format!(
+            "systemd/user/{GNOME_IBUS_UNIT}.d/ibus-bornona.conf"
+        ));
+        if gnome_dropin.is_file() {
+            let _ = std::fs::remove_file(&gnome_dropin);
+            let _ = std::fs::remove_dir(
+                config_home.join(format!("systemd/user/{GNOME_IBUS_UNIT}.d")),
+            );
+            changed = true;
+        }
+    }
     if !errors.is_empty() {
         return Err(errors.join("; "));
     }
     Ok(changed)
 }
 
-/// Configure Alt+Space shortcut for input-source switching.
-pub fn set_alt_space_switcher() -> Result<(), String> {
-    let _ = run(
+fn remove_cosmic_ibus_service() -> Result<bool, String> {
+    let Ok(config_home) = config_home() else {
+        return Ok(false);
+    };
+    let unit_dir = config_home.join("systemd/user");
+    let service = unit_dir.join(COSMIC_IBUS_SERVICE);
+    let service_contents = match std::fs::read_to_string(&service) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("cannot read {}: {error}", service.display())),
+    };
+    let owns_service = service_contents.contains(COSMIC_IBUS_MARKER);
+    let owns_link = service_contents.contains(COSMIC_IBUS_LINK_MARKER);
+    let link = unit_dir
+        .join("cosmic-session.target.wants")
+        .join(COSMIC_IBUS_SERVICE);
+    let runtime_active = env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .is_some_and(|runtime_dir| runtime_dir.join("systemd/private").exists());
+    if owns_service
+        && owns_link
+        && runtime_active
+        && run("systemctl", &["--user", "is-active", COSMIC_IBUS_SERVICE]).is_ok()
+    {
+        run("systemctl", &["--user", "stop", COSMIC_IBUS_SERVICE])?;
+    }
+    let mut removed = false;
+    for path in [
+        owns_service.then_some(&service),
+        (owns_service && owns_link).then_some(&link),
+    ]
+        .into_iter()
+        .flatten()
+    {
+        match std::fs::remove_file(path) {
+            Ok(()) => removed = true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("cannot remove {}: {error}", path.display())),
+        }
+    }
+    if owns_service && owns_link {
+        let _ = std::fs::remove_dir(link.parent().unwrap());
+    }
+    removed |= remove_legacy_generic_cosmic_service(&unit_dir)?;
+    if removed {
+        reload_user_systemd_manager()?;
+    }
+    Ok(removed)
+}
+
+fn configure_gnome_switch_shortcut(accelerator: &str) -> Result<(), String> {
+    let switch_source = format!("['{accelerator}']");
+    run(
         "gsettings",
-        &["set", WM_KEYBINDINGS_SCHEMA, "switch-input-source", "['<Alt>space']"],
-    );
-    let _ = run(
+        &["set", WM_KEYBINDINGS_SCHEMA, "switch-input-source", &switch_source],
+    )?;
+    run(
         "gsettings",
         &["set", WM_KEYBINDINGS_SCHEMA, "switch-input-source-backward", "[]"],
-    );
-    let _ = run(
-        "gsettings",
-        &["set", IBUS_HOTKEY_SCHEMA, "triggers", "['<Alt>space']"],
-    );
+    )?;
     Ok(())
 }
 
@@ -687,58 +1284,66 @@ pub fn setup() -> Result<String, String> {
         return Err("setup is only available on Linux".into());
     }
 
-    let gnome = is_gnome() && has_gnome_input_sources();
+    let config = crate::config::load()?;
+    let (_, accelerator) =
+        normalize_keyboard_switch_shortcut(&config.keyboard_switch_shortcut)?;
 
-    if gnome {
+    if is_gnome() && has_gnome_schema() {
         configure_gnome_component_path()?;
-    } else {
-        let _ = install_environment_conf();
+        add_gnome_input_source()?;
+        configure_gnome_switch_shortcut(&accelerator)?;
+    }
+    install_environment_conf()?;
+    if !configure_cosmic_ibus_service()? {
+        install_autostart_desktop()?;
     }
     remove_legacy_desktop_files();
+    let _ = remove_legacy_cosmic_toggle_shortcut()?;
+    import_session_environment();
     let _ = install_user_icon();
-
     ensure_engine_registered()?;
 
     let mut removed_engines = Vec::new();
     if has_ibus_general_settings() {
         removed_engines = configure_ibus_engines()?;
-        let _ = configure_ibus_hotkeys();
+        configure_ibus_hotkeys(&accelerator)?;
+        let _ = configure_ibus_panel();
     }
-
-    let changed = if gnome {
-        let changed = add_gnome_input_source()?;
-        set_alt_space_switcher()?;
-        changed
-    } else {
-        true
-    };
 
     if !removed_engines.is_empty() {
         return Ok(format!(
-            "Registered Bornona with IBus and removed unavailable input methods: {}. Switch with Alt+Space.",
-            removed_engines.join(", ")
+            "Bornona is ready in IBus. Removed unavailable input methods: {}. Switch layouts with {}.",
+            removed_engines.join(", "),
+            config.keyboard_switch_shortcut
         ));
     }
 
-    Ok(if changed {
-        if gnome {
-            "Added Bornona to your GNOME input sources. Switch with Alt+Space.".to_string()
-        } else if is_cosmic() {
-            "Configured Bornona in IBus for COSMIC desktop. Switch with Alt+Space.".to_string()
-        } else {
-            "Added Bornona to your input sources. Switch with Alt+Space.".to_string()
-        }
+    Ok(if is_gnome() {
+        format!(
+            "Bornona is ready in your GNOME input sources. Switch layouts with {}.",
+            config.keyboard_switch_shortcut
+        )
+    } else if is_cosmic() {
+        format!(
+            "Bornona is ready in IBus. Press {} to switch.",
+            config.keyboard_switch_shortcut
+        )
     } else {
-        if gnome {
-            "Bornona is already in your GNOME input sources. Switch with Alt+Space.".to_string()
-        } else {
-            "Bornona is already in your input sources. Switch with Alt+Space.".to_string()
-        }
+        format!(
+            "Bornona is ready in IBus. Switch layouts with {}.",
+            config.keyboard_switch_shortcut
+        )
     })
 }
 
 /// Run `ibus-bornona doctor`: human-readable diagnostics.
 pub fn doctor() -> String {
+    let config = crate::config::load();
+    let switch_accelerator = match config.as_ref() {
+        Ok(config) => normalize_keyboard_switch_shortcut(&config.keyboard_switch_shortcut)
+            .map(|(_, accelerator)| accelerator),
+        Err(error) => Err(error.clone()),
+    };
     let mut lines = Vec::new();
     let mut check = |ok: bool, what: &str, hint: &str| {
         lines.push(format!(
@@ -783,7 +1388,7 @@ pub fn doctor() -> String {
         "run `ibus-bornona setup` or log out and back in",
     );
 
-    if is_gnome() && has_gnome_input_sources() {
+    if has_gnome_input_sources() {
         let sources = run("gsettings", &["get", SCHEMA, "sources"]).unwrap_or_default();
         check(
             sources.contains(SOURCE_ID),
@@ -796,12 +1401,32 @@ pub fn doctor() -> String {
             &["get", WM_KEYBINDINGS_SCHEMA, "switch-input-source"],
         )
         .unwrap_or_default();
+        let shortcut_name = config
+            .as_ref()
+            .map(|config| config.keyboard_switch_shortcut.as_str())
+            .unwrap_or("configured shortcut");
         check(
-            shortcut.contains("<Alt>space"),
-            "Alt+Space switches input sources",
+            switch_accelerator
+                .as_ref()
+                .is_ok_and(|accelerator| shortcut.contains(accelerator)),
+            &format!("GNOME {shortcut_name} switches input sources"),
             "run `ibus-bornona setup`",
         );
-    } else {
+    }
+
+    if is_cosmic() {
+        let panel = find_wayland_ibus_panel();
+        let panel_ready = panel
+            .as_deref()
+            .is_some_and(ibus_daemon_uses_wayland_panel);
+        check(
+            panel_ready,
+            "COSMIC IBus panel uses the Wayland input-method protocol",
+            "run `ibus-bornona setup` and ensure `ibus-ui-gtk3` is installed",
+        );
+    }
+
+    if has_ibus_general_settings() {
         let preload = run("gsettings", &["get", IBUS_GENERAL_SCHEMA, "preload-engines"]).unwrap_or_default();
         check(
             preload.contains(SOURCE_ID),
@@ -810,12 +1435,57 @@ pub fn doctor() -> String {
         );
     }
 
-    let ibus_triggers = run("gsettings", &["get", IBUS_HOTKEY_SCHEMA, "triggers"]).unwrap_or_default();
+    let autostart_ok = if is_cosmic() && cosmic_ibus_service_configured() {
+        true
+    } else {
+        autostart_dir()
+            .map(|dir| dir.join("ibus-daemon.desktop").is_file())
+            .unwrap_or(false)
+    };
     check(
-        ibus_triggers.contains("<Alt>space"),
-        "IBus Alt+Space trigger is configured",
+        autostart_ok,
+        if is_cosmic() {
+            "IBus daemon starts with the COSMIC session"
+        } else {
+            "IBus daemon autostart desktop entry configured"
+        },
         "run `ibus-bornona setup`",
     );
+
+    let env_ok = env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|h| h.join(".config/environment.d/50-ibus-bornona.conf").is_file())
+        .unwrap_or(false);
+    check(
+        env_ok,
+        "IBus environment configuration installed (~/.config/environment.d/50-ibus-bornona.conf)",
+        "run `ibus-bornona setup`",
+    );
+
+    let ibus_triggers =
+        run("gsettings", &["get", IBUS_HOTKEY_SCHEMA, "triggers"]).unwrap_or_default();
+    let shortcut_name = config
+        .as_ref()
+        .map(|config| config.keyboard_switch_shortcut.as_str())
+        .unwrap_or("configured shortcut");
+    check(
+        switch_accelerator
+            .as_ref()
+            .is_ok_and(|accelerator| ibus_triggers.contains(accelerator)),
+        &format!("IBus {shortcut_name} trigger is configured"),
+        "run `ibus-bornona setup`",
+    );
+
+    match (config, switch_accelerator) {
+        (Ok(config), Ok(_)) => lines.push(format!(
+            "[ ok ] Keyboard switching shortcut: {}",
+            config.keyboard_switch_shortcut
+        )),
+        (Ok(_), Err(error)) => {
+            lines.push(format!("[FAIL] Invalid keyboard switching shortcut: {error}"))
+        }
+        (Err(error), _) => lines.push(format!("[FAIL] Could not read Bornona settings: {error}")),
+    }
 
     lines.join("\n")
 }
@@ -901,8 +1571,112 @@ mod tests {
     }
 
     #[test]
+    fn test_embedded_icon_png_is_valid() {
+        // PNG header is 89 50 4E 47 0D 0A 1A 0A
+        assert!(EMBEDDED_ICON_PNG.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    #[test]
     fn test_compose() {
         assert_eq!(compose("k"), "ক");
         assert_eq!(compose("ka"), "কা");
+    }
+
+    #[test]
+    fn test_autostart_desktop_creation() {
+        let read = autostart_desktop_contents(
+            "/home/user/.local/share/ibus/component:/usr/share/ibus/component:/usr/local/share/ibus/component",
+            Some("/usr/libexec/ibus-ui-gtk3"),
+        );
+        assert!(read.contains("IBUS_COMPONENT_PATH"));
+        assert!(read.contains("Exec=env "));
+        assert!(read.contains("ibus-daemon --daemonize --replace --xim --restart --cache=none"));
+        assert!(read.contains("\"--panel=/usr/libexec/ibus-ui-gtk3 -i\""));
+        assert!(!read.contains("sh -c"));
+        assert!(read.contains("NotShowIn=GNOME;"));
+        assert!(!read.contains("X-GNOME-Autostart-enabled=false"));
+        assert!(GNOME_IBUS_EXEC_START.contains("2>/dev/null"));
+    }
+
+    #[test]
+    fn cosmic_ibus_service_starts_with_the_session_and_keeps_bornona_components_visible() {
+        let contents = cosmic_ibus_service_contents(
+            "/home/user/.local/share/ibus/component:/usr/share/ibus/component",
+            "/usr/bin/ibus-daemon",
+            "/usr/libexec/ibus-ui-gtk3",
+            true,
+        );
+        assert!(contents.contains(COSMIC_IBUS_LINK_MARKER));
+        assert!(contents.contains("[Service]\nType=exec"));
+        assert!(contents.contains("PartOf=cosmic-session.target"));
+        assert!(contents.contains("After=graphical-session-pre.target"));
+        assert!(contents.contains("Environment=\"IBUS_COMPONENT_PATH=/home/user/.local/share/ibus/component:/usr/share/ibus/component\""));
+        assert!(
+            contents.contains("ExecStart=\"/usr/bin/ibus-daemon\" --replace --xim --restart --cache=none \"--panel=/usr/libexec/ibus-ui-gtk3 -i\""),
+            "{contents:?}"
+        );
+        assert!(contents.contains("Environment=\"XMODIFIERS=@im=ibus\""));
+        assert!(contents.contains("Restart=on-failure"));
+        assert!(contents.contains("WantedBy=cosmic-session.target"));
+    }
+
+    #[test]
+    fn desktop_exec_args_escape_desktop_entry_characters() {
+        assert_eq!(
+            desktop_exec_arg(r#"IBUS_COMPONENT_PATH=/home/user's work/$tmp%dir"#),
+            r#""IBUS_COMPONENT_PATH=/home/user's work/\$tmp%%dir""#
+        );
+    }
+
+    #[test]
+    fn cosmic_panel_is_only_ready_when_wayland_im_is_enabled() {
+        let panel = "/usr/libexec/ibus-ui-gtk3";
+        assert!(daemon_command_uses_wayland_panel(
+            "123 ibus-daemon --panel=/usr/libexec/ibus-ui-gtk3 -i",
+            panel
+        ));
+        assert!(!daemon_command_uses_wayland_panel(
+            "123 ibus-daemon --panel=/usr/libexec/ibus-ui-gtk3",
+            panel
+        ));
+        assert!(!daemon_command_uses_wayland_panel(
+            "123 ibus-daemon --panel=disable",
+            panel
+        ));
+    }
+
+    #[test]
+    fn environment_does_not_force_ibus_modules_on_sensitive_prompts() {
+        let environment = environment_conf_contents();
+        assert!(environment.contains("IBUS_COMPONENT_PATH="));
+        assert!(environment.contains("XMODIFIERS=@im=ibus"));
+        assert!(!environment.contains("GTK_IM_MODULE"));
+        assert!(!environment.contains("QT_IM_MODULE"));
+    }
+
+    #[test]
+    fn keyboard_switch_shortcut_is_normalized_for_gsettings() {
+        assert_eq!(
+            normalize_keyboard_switch_shortcut("Alt+Space").unwrap(),
+            ("Alt+Space".into(), "<Alt>space".into())
+        );
+        assert_eq!(
+            normalize_keyboard_switch_shortcut("shift+ctrl+F4").unwrap(),
+            ("Ctrl+Shift+F4".into(), "<Control><Shift>F4".into())
+        );
+        assert_eq!(
+            normalize_keyboard_switch_shortcut("Control+Enter").unwrap(),
+            ("Ctrl+Enter".into(), "<Control>Return".into())
+        );
+    }
+
+    #[test]
+    fn invalid_keyboard_switch_shortcuts_are_rejected() {
+        for shortcut in ["Space", "Alt+Alt+Space", "Hyper+Space", "Ctrl+F36"] {
+            assert!(
+                normalize_keyboard_switch_shortcut(shortcut).is_err(),
+                "accepted invalid shortcut {shortcut}"
+            );
+        }
     }
 }

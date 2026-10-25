@@ -16,7 +16,7 @@
 			<language>bn</language>
 			<license>GPL-3.0-or-later</license>
 			<author>Md. Mahbub Rahman</author>
-			<icon>ibus-bornona</icon>
+			<icon>@ICONPATH@</icon>
 			<layout>us</layout>
 			<longname>Bornona</longname>
 			<description>Bornona Bengali Fixed Layout</description>

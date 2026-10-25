@@ -3,6 +3,39 @@
 use super::chars::*;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SuggestionOrientation {
+    Horizontal,
+    Vertical,
+    System,
+}
+
+impl Default for SuggestionOrientation {
+    fn default() -> Self {
+        Self::Horizontal
+    }
+}
+
+impl SuggestionOrientation {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Horizontal => "horizontal",
+            Self::Vertical => "vertical",
+            Self::System => "system",
+        }
+    }
+
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "horizontal" | "h" | "horiz" => Some(Self::Horizontal),
+            "vertical" | "v" | "vert" => Some(Self::Vertical),
+            "system" | "s" => Some(Self::System),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TypingConfig {
@@ -12,6 +45,12 @@ pub struct TypingConfig {
     #[serde(skip)]
     pub old_kar_order: bool,
     pub traditional_kar: bool,
+    #[serde(alias = "suggestion", alias = "suggestions")]
+    pub word_suggestion: bool,
+    #[serde(alias = "orientation")]
+    pub suggestion_orientation: SuggestionOrientation,
+    pub learning: bool,
+    pub keyboard_switch_shortcut: String,
 }
 
 impl Default for TypingConfig {
@@ -22,6 +61,10 @@ impl Default for TypingConfig {
             old_reph: true,
             old_kar_order: false,
             traditional_kar: false,
+            word_suggestion: false,
+            suggestion_orientation: SuggestionOrientation::Horizontal,
+            learning: true,
+            keyboard_switch_shortcut: "Alt+Space".to_string(),
         }
     }
 }

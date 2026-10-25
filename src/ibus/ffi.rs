@@ -7,10 +7,20 @@ pub type IBusBus = c_void;
 pub type IBusFactory = c_void;
 pub type IBusEngine = c_void;
 pub type IBusText = c_void;
+pub type IBusLookupTable = c_void;
 pub type IBusComponent = c_void;
 pub type IBusEngineDesc = c_void;
 pub type GDBusConnection = c_void;
 pub type GCallback = unsafe extern "C" fn();
+pub type GSourceFunc = unsafe extern "C" fn(*mut c_void) -> c_int;
+
+pub const IBUS_ORIENTATION_HORIZONTAL: c_int = 0;
+pub const IBUS_ORIENTATION_VERTICAL: c_int = 1;
+pub const IBUS_ORIENTATION_SYSTEM: c_int = 2;
+
+pub const IBUS_INPUT_PURPOSE_PASSWORD: u32 = 8;
+pub const IBUS_INPUT_PURPOSE_PIN: u32 = 9;
+pub const IBUS_INPUT_HINT_HIDDEN_TEXT: u32 = 1 << 12;
 
 // IBus Modifiers and Key Masks
 pub const IBUS_SHIFT_MASK: u32 = 1 << 0;
@@ -111,6 +121,29 @@ unsafe extern "C" {
     );
     pub fn ibus_engine_hide_preedit_text(engine: *mut IBusEngine);
 
+    pub fn ibus_lookup_table_new(
+        page_size: c_uint,
+        cursor_pos: c_uint,
+        cursor_visible: c_int,
+        round: c_int,
+    ) -> *mut IBusLookupTable;
+    pub fn ibus_lookup_table_append_candidate(table: *mut IBusLookupTable, text: *mut IBusText);
+    pub fn ibus_lookup_table_append_label(table: *mut IBusLookupTable, text: *mut IBusText);
+    pub fn ibus_lookup_table_set_orientation(table: *mut IBusLookupTable, orientation: c_int);
+    pub fn ibus_lookup_table_set_page_size(table: *mut IBusLookupTable, page_size: c_uint);
+    pub fn ibus_lookup_table_set_cursor_pos(table: *mut IBusLookupTable, cursor_pos: c_uint);
+    pub fn ibus_lookup_table_set_cursor_visible(table: *mut IBusLookupTable, visible: c_int);
+    pub fn ibus_lookup_table_get_cursor_pos(table: *mut IBusLookupTable) -> c_uint;
+    pub fn ibus_lookup_table_clear(table: *mut IBusLookupTable);
+    pub fn ibus_lookup_table_cursor_up(table: *mut IBusLookupTable) -> c_int;
+    pub fn ibus_lookup_table_cursor_down(table: *mut IBusLookupTable) -> c_int;
+    pub fn ibus_engine_update_lookup_table_fast(
+        engine: *mut IBusEngine,
+        lookup_table: *mut IBusLookupTable,
+        visible: c_int,
+    );
+    pub fn ibus_engine_hide_lookup_table(engine: *mut IBusEngine);
+
     pub fn ibus_text_new_from_string(str: *const c_char) -> *mut IBusText;
     pub fn ibus_text_append_attribute(
         text: *mut IBusText,
@@ -154,7 +187,13 @@ unsafe extern "C" {
         connect_flags: c_int,
     ) -> c_uint;
 
+    pub fn g_timeout_add(
+        interval: c_uint,
+        function: GSourceFunc,
+        data: *mut c_void,
+    ) -> c_uint;
+    pub fn g_source_remove(tag: c_uint) -> c_int;
+    pub fn g_free(mem: *mut c_void);
     pub fn g_object_ref_sink(object: *mut c_void) -> *mut c_void;
     pub fn g_object_unref(object: *mut c_void);
-    pub fn g_free(mem: *mut c_void);
 }

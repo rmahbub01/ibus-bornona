@@ -170,4 +170,23 @@ mod tests {
         assert!(processor.is_empty());
         assert!(!processor.backspace());
     }
+
+    #[test]
+    fn suggestion_setting_never_changes_composed_text() {
+        for keys in ["bFNna", "ik", "k@a", "pPaNe", "rV"] {
+            let suggestions_off = TypingConfig {
+                word_suggestion: false,
+                ..TypingConfig::default()
+            };
+            let suggestions_on = TypingConfig {
+                word_suggestion: true,
+                ..TypingConfig::default()
+            };
+            assert_eq!(
+                crate::engine::processor::compose_with_config(keys, suggestions_off),
+                crate::engine::processor::compose_with_config(keys, suggestions_on),
+                "suggestion setting changed the composition for {keys}"
+            );
+        }
+    }
 }
