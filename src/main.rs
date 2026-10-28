@@ -3,6 +3,7 @@ pub mod engine;
 pub mod ibus;
 pub mod layout_viewer;
 pub mod setup;
+pub mod tui;
 
 use std::env;
 use std::io::{self, BufRead, Write};
@@ -19,6 +20,7 @@ USAGE:
 
 COMMANDS:
     setup            Configure Bornona for your desktop
+    tui              Open the interactive terminal interface
     remove-source    Remove Bornona from desktop and IBus settings
     doctor           Check that everything is installed and running
     config           Show or change typing feature settings
@@ -249,6 +251,17 @@ fn main() {
                 }
             }
         }
+        Some("tui") if args.len() == 1 => match tui::run() {
+            Ok(()) => 0,
+            Err(error) => {
+                eprintln!("ibus-bornona tui: {error}");
+                1
+            }
+        },
+        Some("tui") => {
+            eprintln!("Usage: ibus-bornona tui");
+            1
+        }
         Some("compose") if args.len() > 1 => {
             let keys = args[1..].join(" ");
             match config::load() {
@@ -284,8 +297,13 @@ fn main() {
         }
         None => {
             if atty_check() {
-                print!("{HELP}");
-                0
+                match tui::run() {
+                    Ok(()) => 0,
+                    Err(error) => {
+                        eprintln!("ibus-bornona tui: {error}");
+                        1
+                    }
+                }
             } else {
                 // Started by IBus daemon without args
                 if let Err(e) = config::load() {

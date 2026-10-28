@@ -76,6 +76,7 @@ USAGE:
 
 COMMANDS:
     setup            Add Bornona to your DE input sources
+    tui              Open the interactive terminal interface
     doctor           Check that everything is installed and running
     config           Show or change typing feature settings
     reset            Restore all typing features to their defaults
@@ -83,6 +84,14 @@ COMMANDS:
     compose <keys>   Show what a key sequence types, e.g. `ibus-bornona compose bFNna`
     version          Print the version
 ```
+
+Run `ibus-bornona tui` to open the full-screen terminal interface. It includes a
+saved typing-settings screen and a scrollable system health check. Use arrow
+keys to navigate, Enter to select, and Esc to return. Press `q` to quit. The TUI
+needs a terminal at least 64 columns by 24 rows. Running `ibus-bornona` with no
+arguments opens the interface in a terminal; IBus startup without a terminal
+keeps its existing behavior. Use `ibus-bornona --interactive` for the legacy
+line-based typing preview.
 
 ### Typing Feature Settings (`config`, `reset`)
 
