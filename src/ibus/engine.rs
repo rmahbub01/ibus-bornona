@@ -23,12 +23,21 @@ struct EngineInstance {
     lookup_model: LookupModel,
     lookup_visible: bool,
     cosmic_session: bool,
-    password_input: bool,
+    input_content_type: Option<(u32, u32)>,
 }
 
 fn is_sensitive_input(purpose: u32, hints: u32) -> bool {
     matches!(purpose, IBUS_INPUT_PURPOSE_PASSWORD | IBUS_INPUT_PURPOSE_PIN)
         || hints & IBUS_INPUT_HINT_HIDDEN_TEXT != 0
+}
+
+#[allow(non_upper_case_globals)]
+fn is_lock_toggle_key(keyval: u32) -> bool {
+    matches!(keyval, IBUS_KEY_Caps_Lock | IBUS_KEY_Shift_Lock)
+}
+
+fn should_bypass_input(content_type: Option<(u32, u32)>) -> bool {
+    content_type.is_some_and(|(purpose, hints)| is_sensitive_input(purpose, hints))
 }
 
 fn find_installed_icon_path() -> Option<String> {
@@ -187,14 +196,10 @@ unsafe fn update_suggestions(engine: *mut IBusEngine, instance: &mut EngineInsta
     ibus_lookup_table_set_cursor_visible(instance.lookup_table, 1);
     ibus_lookup_table_set_cursor_pos(instance.lookup_table, 0);
 
-    for (index, candidate) in instance.lookup_model.candidates().iter().enumerate() {
+    for candidate in instance.lookup_model.candidates() {
         let candidate_text = new_ibus_text(candidate);
         if !candidate_text.is_null() {
             ibus_lookup_table_append_candidate(instance.lookup_table, candidate_text);
-        }
-        let label = new_ibus_text(&format!("{}.", index + 1));
-        if !label.is_null() {
-            ibus_lookup_table_append_label(instance.lookup_table, label);
         }
     }
 
@@ -330,7 +335,7 @@ unsafe extern "C" fn create_engine_cb(
         lookup_model: LookupModel::default(),
         lookup_visible: false,
         cosmic_session,
-        password_input: false,
+        input_content_type: None,
     }));
     let data = instance as *mut c_void;
 
@@ -406,11 +411,11 @@ unsafe extern "C" fn process_key_event_cb(
     state: u32,
     user_data: *mut c_void,
 ) -> c_int {
-    if state & IBUS_RELEASE_MASK != 0 || user_data.is_null() {
+    if state & IBUS_RELEASE_MASK != 0 || user_data.is_null() || is_lock_toggle_key(keyval) {
         return 0;
     }
     let instance = &mut *(user_data as *mut EngineInstance);
-    if instance.password_input {
+    if should_bypass_input(instance.input_content_type) {
         return 0;
     }
 
@@ -606,8 +611,8 @@ unsafe extern "C" fn set_content_type_cb(
     }
 
     let instance = &mut *(user_data as *mut EngineInstance);
-    instance.password_input = is_sensitive_input(purpose, hints);
-    if instance.password_input {
+    instance.input_content_type = Some((purpose, hints));
+    if is_sensitive_input(purpose, hints) {
         instance.processor.clear();
         hide_preedit(engine);
         hide_suggestions(engine, instance);
@@ -731,7 +736,8 @@ pub fn run_ibus_engine(ibus_daemon_mode: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        candidate_commit_text, candidate_number_from_keyval, is_sensitive_input,
+        candidate_commit_text, candidate_number_from_keyval, is_lock_toggle_key,
+        is_sensitive_input, should_bypass_input,
     };
     use crate::ibus::ffi::{IBUS_KEY_KP_1, IBUS_KEY_KP_9};
 
@@ -747,6 +753,35 @@ mod tests {
             super::IBUS_INPUT_HINT_HIDDEN_TEXT
         ));
         assert!(!is_sensitive_input(0, 0));
+    }
+
+    #[test]
+    fn missing_content_type_does_not_disable_ime() {
+        assert!(!should_bypass_input(None));
+        assert!(!should_bypass_input(Some((0, 0))));
+        assert!(should_bypass_input(Some((super::IBUS_INPUT_PURPOSE_PASSWORD, 0))));
+    }
+
+    #[test]
+    fn lock_toggle_keys_always_bypass_ime_processing() {
+        assert!(is_lock_toggle_key(super::IBUS_KEY_Caps_Lock));
+        assert!(is_lock_toggle_key(super::IBUS_KEY_Shift_Lock));
+        assert!(!is_lock_toggle_key(0x0041));
+    }
+
+    #[test]
+    fn caps_lock_press_is_returned_unhandled_by_the_ibus_callback() {
+        let mut user_data = 0_u8;
+        let result = unsafe {
+            super::process_key_event_cb(
+                std::ptr::null_mut(),
+                super::IBUS_KEY_Caps_Lock,
+                0,
+                0,
+                (&mut user_data as *mut u8).cast(),
+            )
+        };
+        assert_eq!(result, 0);
     }
 
     #[test]

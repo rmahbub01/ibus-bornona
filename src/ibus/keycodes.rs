@@ -64,3 +64,28 @@ pub fn classify_key(keyval: u32, state: u32) -> KeyAction {
         _ => KeyAction::PassThrough,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn caps_lock_remains_a_modifier_with_caps_state_on_or_off() {
+        assert!(matches!(
+            classify_key(IBUS_KEY_Caps_Lock, 0),
+            KeyAction::Modifier
+        ));
+        assert!(matches!(
+            classify_key(IBUS_KEY_Caps_Lock, IBUS_LOCK_MASK),
+            KeyAction::Modifier
+        ));
+    }
+
+    #[test]
+    fn alt_space_shortcut_is_passed_to_ibus_hotkey_handler() {
+        assert!(matches!(
+            classify_key(IBUS_KEY_space, IBUS_MOD1_MASK),
+            KeyAction::CommitAndPassThrough
+        ));
+    }
+}
