@@ -19,17 +19,52 @@ const COSMIC_IBUS_LINK_MARKER: &str = "# ibus-bornona owns the COSMIC session li
 const GNOME_IBUS_EXEC_START: &str = "sh -c 'exec /usr/bin/ibus-daemon --panel disable --cache=none $([ \"$XDG_SESSION_TYPE\" = \"x11\" ] && echo \"--xim\") 2>/dev/null'";
 
 fn is_cosmic() -> bool {
-    ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
-        .iter()
-        .filter_map(|name| env::var(name).ok())
-        .any(|desktop| desktop.to_ascii_lowercase().contains("cosmic"))
+    let matches_env = [
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+        "DESKTOP_SESSION",
+        "GDMSESSION",
+    ]
+    .iter()
+    .filter_map(|name| env::var(name).ok())
+    .any(|desktop| desktop.to_ascii_lowercase().contains("cosmic"));
+
+    if matches_env {
+        return true;
+    }
+
+    Command::new("pgrep")
+        .args(["-x", "cosmic-session"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+        || Command::new("pgrep")
+            .args(["-x", "cosmic-comp"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
 }
 
 fn is_gnome() -> bool {
-    ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
-        .iter()
-        .filter_map(|name| env::var(name).ok())
-        .any(|desktop| desktop.to_ascii_lowercase().contains("gnome"))
+    let matches_env = [
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+        "DESKTOP_SESSION",
+        "GDMSESSION",
+    ]
+    .iter()
+    .filter_map(|name| env::var(name).ok())
+    .any(|desktop| desktop.to_ascii_lowercase().contains("gnome"));
+
+    if matches_env {
+        return true;
+    }
+
+    Command::new("pgrep")
+        .args(["-x", "gnome-shell"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 fn has_gnome_schema() -> bool {
@@ -949,8 +984,19 @@ fn configure_gnome_component_path() -> Result<bool, String> {
     let contents = format!(
         "[Service]\nEnvironment=\"IBUS_COMPONENT_PATH=%h/.local/share/ibus/component:/usr/share/ibus/component:/usr/local/share/ibus/component\"\nExecStart=\nExecStart={GNOME_IBUS_EXEC_START}\n"
     );
+    let already_configured = std::fs::read_to_string(&drop_in)
+        .map(|c| c == contents)
+        .unwrap_or(false);
+    if already_configured && engine_registered() {
+        return Ok(false);
+    }
+
     std::fs::write(&drop_in, contents)
         .map_err(|e| format!("cannot write {}: {e}", drop_in.display()))?;
+
+    let _ = Command::new("pkill")
+        .args(["-f", "ibus-daemon.*-drxR"])
+        .output();
 
     run("systemctl", &["--user", "daemon-reload"])?;
     run("systemctl", &["--user", "restart", GNOME_IBUS_UNIT])?;
@@ -995,6 +1041,19 @@ pub fn ensure_engine_registered() -> Result<(), String> {
             .is_some_and(ibus_daemon_uses_wayland_panel);
     if engine_registered() && cosmic_panel_ready {
         return Ok(());
+    }
+
+    if is_gnome() && run("systemctl", &["--user", "cat", GNOME_IBUS_UNIT]).is_ok() {
+        let _ = Command::new("pkill")
+            .args(["-f", "ibus-daemon.*-drxR"])
+            .output();
+        let _ = run("systemctl", &["--user", "restart", GNOME_IBUS_UNIT]);
+        for _ in 0..20 {
+            thread::sleep(Duration::from_millis(300));
+            if engine_registered() {
+                return Ok(());
+            }
+        }
     }
 
     let daemon_running = Command::new("pgrep")

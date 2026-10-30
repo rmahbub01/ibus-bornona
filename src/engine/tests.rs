@@ -26,6 +26,7 @@ mod tests {
         assert_eq!(layout.map_char('F'), Some("র্"));
         assert_eq!(layout.map_char('P'), Some("্র"));
         assert_eq!(layout.map_char('V'), Some("্য"));
+        assert_eq!(layout.map_char('B'), Some("\u{09AF}\u{09BC}"));
         assert_eq!(layout.map_numpad(0xffb1), Some("১"));
     }
 
@@ -64,7 +65,8 @@ mod tests {
         assert_eq!(compose("Qh"), "ঙ্");
         assert_eq!(compose("Qhi"), "ঙই");
         assert_eq!(compose("Hh"), "হ্");
-        assert_eq!(compose("HhoBar"), "হওয়ার");
+        assert_eq!(compose("HB"), "হ\u{09AF}\u{09BC}");
+        assert_eq!(compose("HhoBar"), "হ\u{0993}\u{09AF}\u{09BC}\u{09BE}\u{09B0}");
         assert_eq!(compose(&format!("h`")), format!("্{}", ZWNJ));
     }
 
@@ -191,5 +193,40 @@ mod tests {
                 "suggestion setting changed the composition for {keys}"
             );
         }
+    }
+
+    #[test]
+    fn hb_composes_hoya_with_canonical_nukta() {
+        use crate::engine::SuggestionEngine;
+
+        let composed = compose("HB");
+        assert_eq!(composed, "হ\u{09AF}\u{09BC}");
+        assert!(!composed.contains('\u{09DF}'));
+
+        let suggestions = SuggestionEngine::suggest(&composed, 5);
+        assert!(!suggestions.is_empty());
+        assert_eq!(suggestions[0], "হ\u{09AF}\u{09BC}");
+
+        let layout = BornonaLayout::new();
+        let mut processor = TypingProcessor::default();
+        type_keys(&mut processor, &layout, "HB");
+        assert_eq!(processor.buffer(), "হ\u{09AF}\u{09BC}");
+        assert!(processor.backspace());
+        assert_eq!(processor.buffer(), "হ");
+        assert!(processor.backspace());
+        assert_eq!(processor.buffer(), "");
+
+        let old_config = TypingConfig {
+            old_kar_order: true,
+            ..TypingConfig::default()
+        };
+        assert_eq!(
+            crate::engine::processor::compose_with_config("iB", old_config.clone()),
+            "\u{09AF}\u{09BC}\u{09BF}"
+        );
+        assert_eq!(
+            crate::engine::processor::compose_with_config("EB", old_config),
+            "\u{09AF}\u{09BC}\u{09C8}"
+        );
     }
 }

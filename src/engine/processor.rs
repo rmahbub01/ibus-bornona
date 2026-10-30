@@ -171,6 +171,13 @@ impl TypingProcessor {
     fn process_character(&mut self, character: char) {
         let last = self.buffer.chars().last().unwrap_or_default();
 
+        if character == B_SIGN_NUKTA && (last.is_kar() || last == B_CHANDRA) {
+            let sign = self.buffer.pop().unwrap();
+            self.buffer.push(B_SIGN_NUKTA);
+            self.buffer.push(sign);
+            return;
+        }
+
         if character.is_kar() && last == B_HASANTA {
             if let Some(vowel) = character.kar_to_independent_vowel() {
                 self.buffer.pop();
@@ -303,9 +310,15 @@ impl TypingProcessor {
         if rightmost == B_CHANDRA {
             rightmost = chars.next().unwrap_or_default();
         }
+        if rightmost == B_SIGN_NUKTA {
+            rightmost = chars.next().unwrap_or_default();
+        }
         let before_rightmost = chars.next().unwrap_or_default();
         rightmost.is_pure_consonant()
-            || (rightmost.is_vowel() && before_rightmost.is_pure_consonant())
+            || (rightmost.is_vowel()
+                && (before_rightmost.is_pure_consonant()
+                    || (before_rightmost == B_SIGN_NUKTA
+                        && chars.next().is_some_and(|c| c.is_pure_consonant()))))
     }
 
     fn insert_old_style_reph(&mut self) {
@@ -331,6 +344,8 @@ impl TypingProcessor {
                 count += 1;
             } else if character == B_HASANTA {
                 hasanta = true;
+                count += 1;
+            } else if character == B_SIGN_NUKTA {
                 count += 1;
             } else if character.is_vowel() {
                 if vowel || (index != 0 && !chandra) {

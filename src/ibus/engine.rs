@@ -327,10 +327,15 @@ unsafe extern "C" fn create_engine_cb(
             return std::ptr::null_mut();
         }
     };
-    let cosmic_session = ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
-        .iter()
-        .filter_map(|name| std::env::var(name).ok())
-        .any(|desktop| desktop.to_ascii_lowercase().contains("cosmic"));
+    let cosmic_session = [
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+        "DESKTOP_SESSION",
+        "GDMSESSION",
+    ]
+    .iter()
+    .filter_map(|name| std::env::var(name).ok())
+    .any(|desktop| desktop.to_ascii_lowercase().contains("cosmic"));
     let lookup_table = unsafe {
         let table = ibus_lookup_table_new(9, 0, 1, 1);
         if !table.is_null() {

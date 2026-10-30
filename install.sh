@@ -106,19 +106,35 @@ for schema, key, kind in (
         user_uid="$(id -u "$SUDO_USER")" || return 1
         user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)" || return 1
         user_runtime="/run/user/$user_uid"
-        [ -S "$user_runtime/bus" ] || return 1
-        command -v runuser >/dev/null 2>&1 || return 1
-        runuser -u "$SUDO_USER" -- env \
-            HOME="$user_home" \
-            XDG_RUNTIME_DIR="$user_runtime" \
-            XDG_CONFIG_HOME="$USER_CONFIG_HOME" \
-            DBUS_SESSION_BUS_ADDRESS="unix:path=$user_runtime/bus" \
-            "$binary" remove-source >/dev/null 2>&1 || runuser -u "$SUDO_USER" -- env \
-                HOME="$user_home" \
-                XDG_RUNTIME_DIR="$user_runtime" \
-                XDG_CONFIG_HOME="$USER_CONFIG_HOME" \
-                DBUS_SESSION_BUS_ADDRESS="unix:path=$user_runtime/bus" \
-                python3 -c "$python_cleanup"
+        local env_args=(
+            "HOME=$user_home"
+            "XDG_CONFIG_HOME=$USER_CONFIG_HOME"
+            "PATH=$BINDIR:$PATH"
+        )
+        [ -d "$user_runtime" ] && env_args+=("XDG_RUNTIME_DIR=$user_runtime")
+        [ -S "$user_runtime/bus" ] && env_args+=("DBUS_SESSION_BUS_ADDRESS=unix:path=$user_runtime/bus")
+
+        if command -v runuser >/dev/null 2>&1; then
+            if [ -n "$binary" ]; then
+                runuser -u "$SUDO_USER" -- env "${env_args[@]}" "$binary" remove-source >/dev/null 2>&1 || \
+                runuser -u "$SUDO_USER" -- env "${env_args[@]}" python3 -c "$python_cleanup" 2>/dev/null || true
+            else
+                runuser -u "$SUDO_USER" -- env "${env_args[@]}" python3 -c "$python_cleanup" 2>/dev/null || true
+            fi
+        elif command -v su >/dev/null 2>&1; then
+            if [ -n "$binary" ]; then
+                su -s /bin/sh "$SUDO_USER" -c "exec env $(printf '%q ' "${env_args[@]}") \"$binary\" remove-source" >/dev/null 2>&1 || \
+                su -s /bin/sh "$SUDO_USER" -c "exec env $(printf '%q ' "${env_args[@]}") python3 -c $(printf '%q' "$python_cleanup")" 2>/dev/null || true
+            else
+                su -s /bin/sh "$SUDO_USER" -c "exec env $(printf '%q ' "${env_args[@]}") python3 -c $(printf '%q' "$python_cleanup")" 2>/dev/null || true
+            fi
+        else
+            if [ -n "$binary" ]; then
+                "$binary" remove-source >/dev/null 2>&1 || python3 -c "$python_cleanup" 2>/dev/null || true
+            else
+                python3 -c "$python_cleanup" 2>/dev/null || true
+            fi
+        fi
     else
         if [ -n "$binary" ]; then
             "$binary" remove-source >/dev/null 2>&1 || python3 -c "$python_cleanup"
@@ -266,6 +282,10 @@ fi
 echo "Building ibus-bornona..."
 cargo build --release --manifest-path "$SRC_DIR/Cargo.toml"
 
+if [ "${EUID:-$(id -u)}" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+    chown -R "$SUDO_USER:" "$SRC_DIR/target" 2>/dev/null || true
+fi
+
 echo "Installing files to $INSTALL_PREFIX..."
 mkdir -p "$BINDIR"
 mkdir -p "$COMPONENT_DIR"
@@ -299,24 +319,52 @@ if [ "${EUID:-$(id -u)}" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" !=
     user_uid="$(id -u "$SUDO_USER")"
     user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
     user_runtime="/run/user/$user_uid"
-    if [ -S "$user_runtime/bus" ] && command -v runuser >/dev/null 2>&1; then
-        DESKTOP_ENV=(
-            "HOME=$user_home"
-            "XDG_RUNTIME_DIR=$user_runtime"
-            "DBUS_SESSION_BUS_ADDRESS=unix:path=$user_runtime/bus"
-            "PATH=$BINDIR:$PATH"
-        )
-        [ -z "${XDG_CONFIG_HOME:-}" ] || DESKTOP_ENV+=("XDG_CONFIG_HOME=$XDG_CONFIG_HOME")
-        [ -z "${XDG_DATA_HOME:-}" ] || DESKTOP_ENV+=("XDG_DATA_HOME=$XDG_DATA_HOME")
-        [ -z "${XDG_CURRENT_DESKTOP:-}" ] || DESKTOP_ENV+=("XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP")
-        [ -z "${XDG_SESSION_DESKTOP:-}" ] || DESKTOP_ENV+=("XDG_SESSION_DESKTOP=$XDG_SESSION_DESKTOP")
-        [ -z "${WAYLAND_DISPLAY:-}" ] || DESKTOP_ENV+=("WAYLAND_DISPLAY=$WAYLAND_DISPLAY")
-        [ -z "${XDG_SESSION_TYPE:-}" ] || DESKTOP_ENV+=("XDG_SESSION_TYPE=$XDG_SESSION_TYPE")
+
+    # Restore desktop session environment variables cleared by sudo
+    if [ -S "$user_runtime/bus" ] && command -v systemctl >/dev/null 2>&1; then
+        eval "$(runuser -u "$SUDO_USER" -- env XDG_RUNTIME_DIR="$user_runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$user_runtime/bus" systemctl --user show-environment 2>/dev/null | grep -E '^(XDG_CURRENT_DESKTOP|XDG_SESSION_DESKTOP|XDG_SESSION_TYPE|WAYLAND_DISPLAY|DISPLAY|DESKTOP_SESSION|GDMSESSION)=' || true)"
+    fi
+    if [ -z "${XDG_CURRENT_DESKTOP:-}" ]; then
+        for pid in $(pgrep -u "$SUDO_USER" -x 'gnome-shell|cosmic-session|cosmic-comp|plasma-desktop|kwin_wayland|sway|hyprland|xfce4-session|ibus-daemon' 2>/dev/null || true); do
+            if [ -r "/proc/$pid/environ" ]; then
+                eval "$(tr '\0' '\n' < "/proc/$pid/environ" | grep -E '^(XDG_CURRENT_DESKTOP|XDG_SESSION_DESKTOP|XDG_SESSION_TYPE|WAYLAND_DISPLAY|DISPLAY|DESKTOP_SESSION|GDMSESSION)=' || true)"
+                break
+            fi
+        done
+    fi
+
+    DESKTOP_ENV=(
+        "HOME=$user_home"
+        "PATH=$BINDIR:$PATH"
+    )
+    [ -d "$user_runtime" ] && DESKTOP_ENV+=("XDG_RUNTIME_DIR=$user_runtime")
+    if [ -S "$user_runtime/bus" ]; then
+        DESKTOP_ENV+=("DBUS_SESSION_BUS_ADDRESS=unix:path=$user_runtime/bus")
+    elif [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+        DESKTOP_ENV+=("DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS")
+    fi
+    [ -z "${XDG_CONFIG_HOME:-}" ] || DESKTOP_ENV+=("XDG_CONFIG_HOME=$XDG_CONFIG_HOME")
+    [ -z "${XDG_DATA_HOME:-}" ] || DESKTOP_ENV+=("XDG_DATA_HOME=$XDG_DATA_HOME")
+    [ -z "${XDG_CURRENT_DESKTOP:-}" ] || DESKTOP_ENV+=("XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP")
+    [ -z "${XDG_SESSION_DESKTOP:-}" ] || DESKTOP_ENV+=("XDG_SESSION_DESKTOP=$XDG_SESSION_DESKTOP")
+    [ -z "${DESKTOP_SESSION:-}" ] || DESKTOP_ENV+=("DESKTOP_SESSION=$DESKTOP_SESSION")
+    [ -z "${GDMSESSION:-}" ] || DESKTOP_ENV+=("GDMSESSION=$GDMSESSION")
+    [ -z "${WAYLAND_DISPLAY:-}" ] || DESKTOP_ENV+=("WAYLAND_DISPLAY=$WAYLAND_DISPLAY")
+    [ -z "${DISPLAY:-}" ] || DESKTOP_ENV+=("DISPLAY=$DISPLAY")
+    [ -z "${XDG_SESSION_TYPE:-}" ] || DESKTOP_ENV+=("XDG_SESSION_TYPE=$XDG_SESSION_TYPE")
+
+    if command -v runuser >/dev/null 2>&1; then
         runuser -u "$SUDO_USER" -- env "${DESKTOP_ENV[@]}" "$BINDIR/ibus-bornona" setup
         echo ""
         runuser -u "$SUDO_USER" -- env "${DESKTOP_ENV[@]}" "$BINDIR/ibus-bornona" doctor
+    elif command -v su >/dev/null 2>&1; then
+        su -s /bin/sh "$SUDO_USER" -c "exec env $(printf '%q ' "${DESKTOP_ENV[@]}") \"$BINDIR/ibus-bornona\" setup"
+        echo ""
+        su -s /bin/sh "$SUDO_USER" -c "exec env $(printf '%q ' "${DESKTOP_ENV[@]}") \"$BINDIR/ibus-bornona\" doctor"
     else
-        echo "System install complete. Run 'ibus-bornona setup' from your desktop session to configure Bornona."
+        "$BINDIR/ibus-bornona" setup
+        echo ""
+        "$BINDIR/ibus-bornona" doctor
     fi
 else
     "$BINDIR/ibus-bornona" setup

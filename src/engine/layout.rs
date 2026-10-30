@@ -53,7 +53,7 @@ pub const SINGLE_KEY: &[(char, &str)] = &[
     ('H', "হ"),
     ('Z', "ড়"),
     ('X', "ঢ়"),
-    ('B', "য়"),
+    ('B', "\u{09AF}\u{09BC}"),
     ('\\', "ৱ"),
     ('|', "ৰ"),
     // 4. Special signs & phalas

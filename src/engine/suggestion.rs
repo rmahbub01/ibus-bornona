@@ -123,6 +123,14 @@ fn byte_to_char(b: u8) -> Option<char> {
     }
 }
 
+fn normalize_prefix_for_fst(prefix: &str) -> String {
+    prefix.replace("\u{09AF}\u{09BC}", "\u{09DF}")
+}
+
+fn normalize_candidate_for_output(word: &str) -> String {
+    word.replace('\u{09DF}', "\u{09AF}\u{09BC}")
+}
+
 pub struct SuggestionEngine;
 
 impl SuggestionEngine {
@@ -172,9 +180,10 @@ impl SuggestionEngine {
             return Vec::new();
         };
         let mut node = fst.root();
+        let fst_prefix = normalize_prefix_for_fst(prefix);
 
         // Traverse down the prefix
-        for c in prefix.chars() {
+        for c in fst_prefix.chars() {
             let byte = char_to_byte(c);
             match node.find_input(byte) {
                 Some(idx) => {
@@ -192,8 +201,9 @@ impl SuggestionEngine {
 
         // 1. If prefix itself is in dictionary, include it
         if node.is_final() {
-            candidates.push(prefix.to_string());
-            visited.insert(prefix.to_string());
+            let prefix_out = normalize_candidate_for_output(prefix);
+            candidates.push(prefix_out.clone());
+            visited.insert(prefix_out);
         }
 
         // 2. BFS traversal to discover completions
@@ -208,11 +218,14 @@ impl SuggestionEngine {
                     let mut next_suffix = suffix.clone();
                     next_suffix.push(ch);
 
-                    let full_word = format!("{}{}", prefix, next_suffix);
-                    if next_node.is_final() && visited.insert(full_word.clone()) {
-                        candidates.push(full_word);
-                        if candidates.len() >= 120 {
-                            break;
+                    let full_word = format!("{}{}", fst_prefix, next_suffix);
+                    if next_node.is_final() {
+                        let output_word = normalize_candidate_for_output(&full_word);
+                        if visited.insert(output_word.clone()) {
+                            candidates.push(output_word);
+                            if candidates.len() >= 120 {
+                                break;
+                            }
                         }
                     }
 
@@ -313,7 +326,19 @@ impl SuggestionEngine {
             let suffix = &word[prefix.len()..];
             if matches!(
                 suffix,
-                "র" | "ের" | "কে" | "তে" | "ে" | "য়" | "টি" | "টা" | "গুলো" | "রা" | "দের" | "ই" | "ও"
+                "র" | "ের"
+                    | "কে"
+                    | "তে"
+                    | "ে"
+                    | "য়"
+                    | "\u{09AF}\u{09BC}"
+                    | "টি"
+                    | "টা"
+                    | "গুলো"
+                    | "রা"
+                    | "দের"
+                    | "ই"
+                    | "ও"
             ) {
                 score += 45.0;
             }
