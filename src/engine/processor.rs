@@ -171,14 +171,12 @@ impl TypingProcessor {
     fn process_character(&mut self, character: char) {
         let last = self.buffer.chars().last().unwrap_or_default();
 
-        if character.is_kar()
-            && last == B_HASANTA
-            && character.is_left_standing_kar()
-        {
-            self.buffer.pop();
-            self.buffer
-                .push(character.kar_to_independent_vowel().unwrap_or(character));
-            return;
+        if character.is_kar() && last == B_HASANTA {
+            if let Some(vowel) = character.kar_to_independent_vowel() {
+                self.buffer.pop();
+                self.buffer.push(vowel);
+                return;
+            }
         }
 
         if character.is_kar() {

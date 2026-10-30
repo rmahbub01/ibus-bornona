@@ -50,18 +50,21 @@ mod tests {
     }
 
     #[test]
-    fn hasanta_is_immediate_and_left_standing_kars_become_independent_vowels() {
+    fn hasanta_is_immediate_and_kars_become_independent_vowels() {
         assert_eq!(compose("h"), "্");
-        assert_eq!(compose("ha"), "্া");
+        assert_eq!(compose("ha"), "আ");
         assert_eq!(compose("hi"), "ই");
-        assert_eq!(compose("hI"), "্ী");
-        assert_eq!(compose("ha hi hI"), "্া ই ্ী");
-        assert_eq!(compose("kha"), "ক্া");
+        assert_eq!(compose("hI"), "ঈ");
+        assert_eq!(compose("ho"), "ও");
+        assert_eq!(compose("ha hi hI"), "আ ই ঈ");
+        assert_eq!(compose("kha"), "কআ");
         assert_eq!(compose("khi"), "কই");
-        assert_eq!(compose("khI"), "ক্ী");
+        assert_eq!(compose("khI"), "কঈ");
+        assert_eq!(compose("kho"), "কও");
         assert_eq!(compose("Qh"), "ঙ্");
         assert_eq!(compose("Qhi"), "ঙই");
         assert_eq!(compose("Hh"), "হ্");
+        assert_eq!(compose("HhoBar"), "হওয়ার");
         assert_eq!(compose(&format!("h`")), format!("্{}", ZWNJ));
     }
 
