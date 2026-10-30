@@ -49,6 +49,7 @@ pub struct TypingConfig {
     pub word_suggestion: bool,
     #[serde(alias = "orientation")]
     pub suggestion_orientation: SuggestionOrientation,
+    pub suggestion_trailing_space: bool,
     pub learning: bool,
     pub keyboard_switch_shortcut: String,
 }
@@ -63,6 +64,7 @@ impl Default for TypingConfig {
             traditional_kar: false,
             word_suggestion: false,
             suggestion_orientation: SuggestionOrientation::Horizontal,
+            suggestion_trailing_space: false,
             learning: true,
             keyboard_switch_shortcut: "Alt+Space".to_string(),
         }

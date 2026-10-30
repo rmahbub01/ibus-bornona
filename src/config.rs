@@ -143,6 +143,7 @@ pub fn feature_name(feature: &str) -> Option<&'static str> {
         "old-reph" => Some("Old Style Reph"),
         "traditional-kar" => Some("Traditional Kar Joining"),
         "word-suggestion" | "suggestion" | "suggestions" => Some("Word Suggestions"),
+        "suggestion-trailing-space" | "trailing-space" => Some("Space After Suggestion"),
         "suggestion-orientation" | "orientation" => Some("Suggestion Orientation"),
         "keyboard-switch-shortcut" => Some("Keyboard Switching Shortcut"),
         "learning" => Some("Suggestion Learning"),
@@ -157,6 +158,9 @@ pub fn set_feature(config: &mut TypingConfig, feature: &str, enabled: bool) -> b
         "old-reph" => config.old_reph = enabled,
         "traditional-kar" => config.traditional_kar = enabled,
         "word-suggestion" | "suggestion" | "suggestions" => config.word_suggestion = enabled,
+        "suggestion-trailing-space" | "trailing-space" => {
+            config.suggestion_trailing_space = enabled
+        }
         "learning" => config.learning = enabled,
         _ => return false,
     }
@@ -173,6 +177,14 @@ mod tests {
     use crate::engine::SuggestionOrientation;
 
     #[test]
+    fn older_settings_default_trailing_space_to_off() {
+        let config: TypingConfig = serde_json::from_str(r#"{"auto_vowel":false}"#).unwrap();
+
+        assert!(!config.auto_vowel);
+        assert!(!config.suggestion_trailing_space);
+    }
+
+    #[test]
     fn feature_updates_change_only_the_requested_setting() {
         let mut config = TypingConfig::default();
 
@@ -186,10 +198,13 @@ mod tests {
         assert!(config.old_reph);
         assert!(!config.traditional_kar);
         assert!(!config.word_suggestion);
+        assert!(!config.suggestion_trailing_space);
         assert_eq!(config.suggestion_orientation, SuggestionOrientation::Horizontal);
 
         assert!(set_feature(&mut config, "suggestion", false));
         assert!(!config.word_suggestion);
+        assert!(set_feature(&mut config, "trailing-space", false));
+        assert!(!config.suggestion_trailing_space);
         assert!(set_feature(&mut config, "learning", false));
         assert!(!config.learning);
 

@@ -18,12 +18,13 @@ use crate::{
 };
 
 const HOME_ITEMS: [&str; 3] = ["Typing settings", "System health", "Quit"];
-const SETTINGS: [(&str, Setting); 7] = [
+const SETTINGS: [(&str, Setting); 8] = [
     ("Automatic vowel forming", Setting::AutoVowel),
     ("Chandrabindu position fix", Setting::AutoChandra),
     ("Old-style reph", Setting::OldReph),
     ("Traditional kar joining", Setting::TraditionalKar),
     ("Word suggestions", Setting::Suggestions),
+    ("Space after suggestion", Setting::SuggestionTrailingSpace),
     ("Suggestion learning", Setting::Learning),
     ("Suggestion orientation", Setting::Orientation),
 ];
@@ -35,6 +36,7 @@ enum Setting {
     OldReph,
     TraditionalKar,
     Suggestions,
+    SuggestionTrailingSpace,
     Learning,
     Orientation,
 }
@@ -451,6 +453,7 @@ fn setting_value(setting: Setting, config: &TypingConfig) -> &'static str {
         Setting::OldReph => on_off(config.old_reph),
         Setting::TraditionalKar => on_off(config.traditional_kar),
         Setting::Suggestions => on_off(config.word_suggestion),
+        Setting::SuggestionTrailingSpace => on_off(config.suggestion_trailing_space),
         Setting::Learning => on_off(config.learning),
         Setting::Orientation => config.suggestion_orientation.as_str(),
     }
@@ -479,6 +482,9 @@ fn toggled_setting(setting: Setting, reverse: bool, config: &TypingConfig) -> Ty
         Setting::OldReph => updated.old_reph = !updated.old_reph,
         Setting::TraditionalKar => updated.traditional_kar = !updated.traditional_kar,
         Setting::Suggestions => updated.word_suggestion = !updated.word_suggestion,
+        Setting::SuggestionTrailingSpace => {
+            updated.suggestion_trailing_space = !updated.suggestion_trailing_space
+        }
         Setting::Learning => updated.learning = !updated.learning,
         Setting::Orientation => {
             updated.suggestion_orientation = match updated.suggestion_orientation {
@@ -522,6 +528,17 @@ mod tests {
         assert_eq!(config.suggestion_orientation, SuggestionOrientation::Vertical);
         config = toggled_setting(Setting::Orientation, true, &config);
         assert_eq!(config.suggestion_orientation, SuggestionOrientation::Horizontal);
+    }
+
+    #[test]
+    fn suggestion_trailing_space_setting_toggles() {
+        let config = TypingConfig::default();
+        assert_eq!(
+            setting_value(Setting::SuggestionTrailingSpace, &config),
+            "OFF"
+        );
+        let updated = toggled_setting(Setting::SuggestionTrailingSpace, false, &config);
+        assert!(updated.suggestion_trailing_space);
     }
 
     #[test]

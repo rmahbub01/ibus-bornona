@@ -101,6 +101,7 @@ Show the current settings or change typing feature configurations:
 ibus-bornona config
 ibus-bornona config suggestions on
 ibus-bornona config suggestions off
+ibus-bornona config suggestion-trailing-space off
 ibus-bornona config orientation system
 ibus-bornona config keyboard-switch-shortcut Ctrl+Space
 ibus-bornona config learning on
@@ -113,6 +114,7 @@ ibus-bornona config traditional-kar on
 
 Feature names and options:
 - `suggestions` (aliases: `word-suggestion`, `suggestion`): Show dictionary suggestions (`on` / `off`, default: `off`).
+- `suggestion-trailing-space` (alias: `trailing-space`): Add a space after committing a selected suggestion (`on` / `off`, default: `off`).
 - `orientation` (alias: `suggestion-orientation`): Arrange popup suggestions horizontally, vertically, or according to the IBus system setting (`horizontal` / `vertical` / `system`, default: `horizontal`).
 - `keyboard-switch-shortcut`: Set the input-source switching shortcut using modifier+key notation (for example `Alt+Space`, `Ctrl+Space`, or `Shift+Alt+Space`; default: `Alt+Space`). Supported modifiers are Ctrl, Alt, Shift, and Super.
 - `learning`: Remember selected dictionary suggestions to rank them higher (`on` / `off`, default: `on`). `ibus-bornona learn clear` removes learned preferences.

@@ -49,6 +49,10 @@ FEATURES:
     suggestions             Word Suggestions
                             Possible values: on, off (default: off)
 
+    suggestion-trailing-space
+                            Add a space after a selected suggestion
+                            Possible values: on, off (default: off)
+
     orientation              Suggestion Orientation (alias: suggestion-orientation)
                             Possible values: horizontal, vertical, system (default: horizontal)
 
@@ -80,6 +84,10 @@ FEATURES:
                             Possible values: on, off (default: off)
 
     suggestions             Word Suggestions
+                            Possible values: on, off (default: off)
+
+    suggestion-trailing-space
+                            Add a space after a selected suggestion
                             Possible values: on, off (default: off)
 
     orientation              Suggestion Orientation (alias: suggestion-orientation)
@@ -363,6 +371,11 @@ fn update_config(args: &[String]) -> Result<(), String> {
             );
             println!(
                 "{}: {}",
+                config::feature_name("suggestion-trailing-space").unwrap(),
+                if config.suggestion_trailing_space { "on" } else { "off" }
+            );
+            println!(
+                "{}: {}",
                 config::feature_name("suggestion-orientation").unwrap(),
                 config.suggestion_orientation.as_str()
             );
@@ -467,6 +480,7 @@ mod tests {
             "old-reph",
             "traditional-kar",
             "suggestions",
+            "suggestion-trailing-space",
             "suggestion-orientation",
             "keyboard-switch-shortcut",
             "learning",
@@ -494,6 +508,7 @@ mod tests {
             "old-reph",
             "traditional-kar",
             "suggestions",
+            "suggestion-trailing-space",
             "suggestion-orientation",
             "keyboard-switch-shortcut",
             "learning",

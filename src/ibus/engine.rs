@@ -99,9 +99,16 @@ fn replace_word_in_preedit(preedit: &str, prefix: &str, candidate: &str) -> Stri
         .unwrap_or_else(|| candidate.to_string())
 }
 
-fn candidate_commit_text(preedit: &str, prefix: &str, candidate: &str) -> String {
+fn candidate_commit_text(
+    preedit: &str,
+    prefix: &str,
+    candidate: &str,
+    trailing_space: bool,
+) -> String {
     let mut committed = replace_word_in_preedit(preedit, prefix, candidate);
-    committed.push(' ');
+    if trailing_space {
+        committed.push(' ');
+    }
     committed
 }
 
@@ -244,7 +251,12 @@ unsafe fn select_candidate(
     }
     let preedit = instance.processor.preedit_text();
     let word_prefix = preedit.split_whitespace().last().unwrap_or(&preedit);
-    let committed = candidate_commit_text(&preedit, word_prefix, &chosen);
+    let committed = candidate_commit_text(
+        &preedit,
+        word_prefix,
+        &chosen,
+        instance.config_watcher.config().suggestion_trailing_space,
+    );
     let text = new_ibus_text(&committed);
     if text.is_null() || engine.is_null() {
         eprintln!("ibus-bornona: could not commit selected suggestion");
@@ -736,8 +748,8 @@ pub fn run_ibus_engine(ibus_daemon_mode: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        candidate_commit_text, candidate_number_from_keyval, is_lock_toggle_key,
-        is_sensitive_input, should_bypass_input,
+        candidate_commit_text, candidate_number_from_keyval, is_lock_toggle_key, is_sensitive_input,
+        should_bypass_input,
     };
     use crate::ibus::ffi::{IBUS_KEY_KP_1, IBUS_KEY_KP_9};
 
@@ -797,19 +809,23 @@ mod tests {
     #[test]
     fn explicitly_committed_suggestion_has_trailing_space() {
         assert_eq!(
-            candidate_commit_text("আগের শব্দ", "শব্দ", "স্বাধীন"),
+            candidate_commit_text("আগের শব্দ", "শব্দ", "স্বাধীন", true),
             "আগের স্বাধীন "
+        );
+        assert_eq!(
+            candidate_commit_text("আগের শব্দ", "শব্দ", "স্বাধীন", false),
+            "আগের স্বাধীন"
         );
     }
 
     #[test]
     fn suggestion_replaces_only_the_current_word() {
         assert_eq!(
-            candidate_commit_text("আগের শব্দ", "শব্দ", "শব্দটি"),
+            candidate_commit_text("আগের শব্দ", "শব্দ", "শব্দটি", true),
             "আগের শব্দটি "
         );
         assert_eq!(
-            candidate_commit_text("শব্দ", "শব্দ", "শব্দটি"),
+            candidate_commit_text("শব্দ", "শব্দ", "শব্দটি", true),
             "শব্দটি "
         );
     }
