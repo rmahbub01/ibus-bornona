@@ -30,10 +30,10 @@ The shifted layer accessed with <kbd>Shift</kbd> or <kbd>Alt</kbd>, providing in
 
 ## Quick Install
 
-Install with a single command (no root privileges required):
+Install with a single command:
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/rmahbub01/ibus-bornona/master/install.sh | sh
+sudo curl -LsSf https://raw.githubusercontent.com/rmahbub01/ibus-bornona/master/install.sh | sh
 ```
 
 ### Uninstallation
@@ -41,7 +41,7 @@ curl -LsSf https://raw.githubusercontent.com/rmahbub01/ibus-bornona/master/insta
 To remove `ibus-bornona`:
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/rmahbub01/ibus-bornona/master/install.sh | sh -s -- --uninstall
+sudo curl -LsSf https://raw.githubusercontent.com/rmahbub01/ibus-bornona/master/install.sh | sh -s -- --uninstall
 ```
 
 For system-wide installation or removal from a cloned repository:
@@ -51,14 +51,14 @@ sudo make install
 sudo make uninstall
 ```
 
-These Make targets use `install.sh`. Uninstall removes Bornona's installed
+These Make targets use `sudo install.sh`. Uninstall removes Bornona's installed
 binary, IBus component, icons, settings, learned words, and desktop integration
 files while preserving other configured input sources.
 
 The install script also removes Bornona from the current user's GNOME input
 sources while preserving any other configured sources.
 
-`install.sh --uninstall` also removes ibus-bornona's per-user settings and
+`sudo install.sh --uninstall` also removes ibus-bornona's per-user settings and
 learned-word dictionary, along with its installed component, icons, and
 Bornona-specific desktop integration files. Use the same `--prefix` value used
 for a custom-prefix installation.
